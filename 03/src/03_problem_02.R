@@ -174,6 +174,14 @@ barplot(PriLikPost,main=expression("Triplot for Transmission Error Rate"~Lambda)
 
 
 #Process observations sequentially and do a triplot at each step
+df.seq <- NULL
+df.seq$i <- NA
+df.seq$lambda <- NA
+df.seq$prior <- NA
+df.seq$post <- NA
+df.seq$norm <- NA
+
+df.seq <- as.data.frame(df.seq)
 
 for (i in 1:length(errors)) {
     num <- errors[i]                            # transmission errors in ith hour
@@ -181,13 +189,35 @@ for (i in 1:length(errors)) {
     postDist <- postDist/sum(postDist)          # Normalize to get posterior after ith hour
     normLik <- dpois(num,lambda)/sum(dpois(num,lambda)) # Normalized likelihood
     PriLikPost=rbind(priorDist,normLik,postDist)
+    
+    df.tmp <- NULL
+    df.tmp$i <- i
+    df.tmp$lambda <- lambda
+    df.tmp$prior <- priorDist
+    df.tmp$post <- postDist
+    df.tmp$norm <- normLik
+    
+    df.seq<- 
+        df.seq %>%
+        bind_rows(., 
+                  as.data.frame(df.tmp))
 
-    barplot(PriLikPost,main=paste("Triplot for Arrival Rate at 15 Second Block ",i),
-            xlab=expression(lambda), ylab="Probability", col=c("lightblue","lightgreen","pink"),
-            border=c("darkblue","darkgreen","red"),names.arg=round(lambda,2),
-            beside=TRUE,legend=c("Prior","Norm Lik","Posterior"),ylim=c(0,0.3))
+    # barplot(PriLikPost,main=paste("Triplot for Arrival Rate at 15 Second Block ",i),
+    #         xlab=expression(lambda), ylab="Probability", col=c("lightblue","lightgreen","pink"),
+    #         border=c("darkblue","darkgreen","red"),names.arg=round(lambda,2),
+    #         beside=TRUE,legend=c("Prior","Norm Lik","Posterior"),ylim=c(0,0.3))
 
     priorDist <- postDist     # posterior at this step becomes prior for next step
 }
 
 
+seq.plot <-
+    df.seq %>%
+    filter(!is.na(i)) %>%
+    gather(Distribution, Value, -i, -lambda) %>%
+    ggplot(aes(x=lambda, 
+               y=Value, 
+               fill=Distribution)) +
+    geom_bar(stat = 'identity', 
+             position = 'dodge') +
+    facet_wrap(~i, ncol = 3)
