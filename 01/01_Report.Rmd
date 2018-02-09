@@ -1,0 +1,105 @@
+---
+title: 'SYST 664: HW Assignment 1'
+author: "Jake Whalen"
+date: "January 29, 2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = F)
+source('setup.R')
+```
+
+```{r p1}
+source('problem_1.R')
+```
+
+```{r p2}
+source('problem_2.R')
+```
+
+```{r p3}
+source('problem_3.R')
+```
+
+
+
+
+1. In both part a & b the sensitivity and specificity are `r sensitivity.1a` and `r specificity.1a` respectively. 
+    + __Part A__  
+    In part a the organization knows that 1 individual in 1000 commits a security violation. 
+    The objective is to determine the posterior probability that an individual has commited a security violation given their polygraph indicates a concern.
+    The posterior probability can be calculated given the prior probability, sensitivity and specificity. 
+    The equation below shows how to calculate the posterior probability. 
+    $Con$ means a concern was raised by the polygraph.
+    $Com$ means an individual commited the violation. 
+    $NotCom$ means an individual did not commit the violation. 
+    $$P(Com|Con) = P(Con|Com)P(Com)/P(Con|Com)P(Com) + P(Con|NotCom)P(Com)$$
+    After plugging in the values you end up with a posterior probability of `r round(postProb.1a, 5)` that an individual commited the violation given their polygraph had a concern. 
+    Using this for routine screening of individuals who require clearances would not be a good idea. 
+    The problem is that there is only a `r round(postProb.1a, 5)` probability the individual __did__ commit the violation when a concern is raised by the polygraph. 
+    On the other hand there is a `r round(1-postProb.1a, 5)` probability the individual __did not__ commit the violation when a concern is raised by the polygraph.
+    Thus, the security group at this organization would have to deal with a large amount of false positives if they simply trusted the results of the polygraph.
+    
+    + __Part B__  
+    In part b we change the prior probability to 1 individual in 4 (`r p.prior.1b`) commits a theft (new crime).
+    The change is due to an investigator looking into the theft and bringing new knowledge to the table.
+    This drastically increases the posterior probability. 
+    The new posterior probability is equal to `r round(postProb.1b, 5)`.
+    Now we can say that the probability that the individual stole the item is `r round(postProb.1b, 5)` when the polygraph raises a concern.
+    We can also say there is a `r round(1-postProb.1b, 5)` probability the individual did not steal the item when the polygraph raises a concern.
+    Unlike in problem _a_ we are much more confident in the polygraph results. 
+    In the case presented in _b_, the organization can put more weight on the results of the polygraph because the false positives have gone way down and true positives have gone up.
+
+2. The situation in problem 2 involves an individual commiting a crime or security violation.
+We were able to obtain evidence that the sensitivity and specificity were `r sensitivity.2` and `r specificity.2` respectively.
+The goal is to find the policy that minimizes expected loss.
+To do this I first created a table that lays out the different States of the world, Probabilities of each State, Actions to take when in that State and the resulting Loss in that Action. 
+
+```{r, results='asis'}
+kable(df.p2, format = "markdown")
+```
+
+The next step is to form the Loss equations for the three different options Following the Test, Always Sanction, and Never Sanction.
+First to find the equation for always following the test I add all the expected losses together.
+$$1*0.8*P(Commit)+100*0.2*P(Commit)+10*0.15*(1-P(Commit))+0*0.85*(1-P(Commit))$$
+$$= 19.3*P(Commit)+1.5$$
+Next the expected Loss for always applying a Sanction is calculated.
+To do this you simply sum the product of each state where a sanction is applied and the probability of the individual commiting the crime (rows 1 & 3 in table).
+$$1*P(Commit) + 10*(1-P(Commit)) = 10 - 9*P(Commit)$$
+Last the expected Loss for never applying a Sanction is calculated (rows 2 & 4 in table).
+$$100*P(Commit) + 0*(1-P(Commit)) = 100*P(Commit)$$
+
+Now the value of $P(Commit)$ is varied between 0 and 1 and the expected loss of the three different scenarios is calculated.
+The graph below shows the three scenarios and the values of $P(Commit)$ at which they intersect (black points).
+
+```{r, fig.align='center', fig.height=3, fig.width=5}
+p2.plot
+```
+
+The intersection points indicate changes in what action should be taken based on the prior probability $P(Commit)$.
+When $P(Commit) < 0.0186$ No Sanction should be administered always, no matter the polygraph test results.
+When $0.0186 < P(Commit) < 0.3004$ the organization should always follow the results of the polygraph test. 
+If a concern is raised then a sanction should be administered.
+If no concern is raised then no sanction should be administered.
+When $P(Commit) > 0.3004$ a sanction should always be placed on the individual.
+Using these ranges for the prior probability to determine the actions will ensure the lowest expected loss.
+
+3. Experimenters performed a study in which a polygraph was administered to subjects in a simulated theft scenario. 
+Before being polygraphed, subjects waited in a room where $50 was left on a table in open view. 
+Some subjects were instructed to take the money, while others were asked to leave it there. 
+Both groups were asked to tell the polygrapher that they did not take the money, and were given a monetary reward if the polygrapher believed them.
+Assume the polygraph sensitivity Q has 20 equally spaced possible values ranging from 0.025 to 0.975.
+Assume that polygraph results for people who took the $50 are independent and identically distributed, with probability Q of the polygraph showing a concern. 
+Assume that all 20 values of Q are equally likely a priori.
+Suppose the polygrapher found a concern for 12 of the 15 subjects who took the $50.
+Make a bar plot of the posterior distribution for Q given the results of the study.
+
+```{r, fig.align='center', fig.height=3, fig.width=5}
+p3.plot
+```
+
+The resulting graph of the posterior probability is what I expected.
+The distribution looks to center around 0.75 to 0.85.
+Given that the polygrapher found a concern for 12 of 15 (`r 12/15`) individuals who took the money, I expected the posterior distribution to have a negative skew. 
+The graph above has a negative skew and also shows a mean close to 0.8 as expected.

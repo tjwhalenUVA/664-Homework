@@ -1,0 +1,201 @@
+---
+title: "SYST 664: HW Assignment 2"
+author: "Jake Whalen"
+date: "February 5, 2018"
+output: word_document
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      warning = F, 
+                      fig.align = 'center', 
+                      fig.width=6, 
+                      fig.height=3)
+```
+
+```{r}
+source("02_setup.R")
+source("02_problem_01.R")
+source("02_problem_02.R")
+```
+
+
+# Problem 1
+There are two parts to problem 1. 
+Each deals with a choice between two options for a gamble. 
+In each section the expected utility functions will be calculated and graphed. 
+Using these graphs I will be able to determine which options are preffered based on maximizing the expected utility.
+
+## Gamble 1
+Gamble one has two options A and B.
+Option A has three possible outcomes.
+Option A is to win $2500 with a 0.33 probability, 
+win $2400 with a 0.66 probability
+or win nothing ($0) with a 0.01 probability.
+Option B offered a guaranteed (1.0 probability) $2400.
+
+The winnings of both options had the same utilites.
+Winning $0 had a utility of 0.
+Winning $2500 had a utility of 1.
+The utility of winning $2400 was set to x.
+In order to find the utility of each option we must sum up the probabilities multiplied by the utilities of each winning.
+
+* Utility Option A
+
+$$0.33*U(2500)+0.66*x+0.01*U(0) = 0.33+0.66*x$$
+
+* Utility Option B
+
+$$1.0*x$$
+
+The graph below helps determine for what values of x a person would choose option A or option B given they are an expected utility maximizer.
+
+```{r}
+g1.plot
+```
+
+Based on the plot above an expected utility maximizer would choose Option A when x < 0.9706.
+Option B would be chosen when x > 0.9706.
+
+## Gamble 2
+
+In Gamble 2 the gambler is again presented with two options this time labelled C and D.
+Option C has two possible outcomes.
+They are win $2500 with a 0.33 probability
+or win $0 with a 0.67 probability.
+Option B has two possible outcomes.
+They are win $2400 with a 0.34 probability
+or win $0 with a 0.66 probability.
+Again I need to calculate the expected utility functions for each option.
+
+* Utility Option C
+
+$$0.33*U(2500)+0.66*U(0) = 0.33$$
+
+* Utility Option D
+
+$$0.34*x+0.66*U(0) = 0.34x$$
+
+The graph below helps determine for what values of x a person would choose option C or option D given they are an expected utility maximizer.
+
+```{r}
+g2.plot
+```
+
+Based on the plot above an expected utility maximizer would choose Option C when x < 0.9706.
+Option D would be chosen when x > 0.9706.
+
+#### Explain why no expected utility maximizer would prefer both B in Gamble 1 and C in Gamble 2? Discuss these results.
+This question is stating that there is a single expected utility maximizer.
+Given this statement we can safely assume that between Gambles the maximizers utilities do not change.
+Thus in both Gamble 1 and 2 the utility of winning $2400 (x) remains the same.
+Looking at the graphs below we see that in both Gambles the two options (A & B in Gamble 1, C & D in Gamble 2) intersect when x equals 0.9706.
+
+```{r}
+gamble.plot
+```
+
+Option B in Gamble 1 (left) __is not__ preffered by the maximizer for values of x below 0.9706.
+Option C in Gamble 2 (right) __is__ preffered by the maximizer for values of x below 0.9706.
+If the expected utility maximizer sets x to 0.5 then they would prefer option A in Gamble 1 and option C in Gamble 2.
+Likewise if they set x to 0.99 then they would prefer option B in Gamble 1 and option D in Gamble 2.
+
+#### Why do you think many people prefer B in Gamble 1 and C in Gamble 2?
+I think people prefer option B in Gamble 1 because it is a sure thing with absolutely no risk.
+Most people will think in terms of losses rather then only gains when assessing the situation.
+Part of the findings from Kahneman and Tversky was that people are very risk averse.
+This is because the idea of a loss feels more painful then the joy of a gain.
+Therefore anytime a person is given a sure thing, with no chance of a loss, they will usually take it.
+
+People prefer option C in Gamble 2 even though the probability of winning nothing is 1% (0.01) higher then in option D.
+The difference here is that people often perceive this difference as much smaller then the difference in the first gamble. 
+Even in Gamble 1 you only had a 1% greater probability of losing by going with option A.
+The difference there however was that 0% chance of winning nothing in option B.
+The human mind looks at the probabilities of winning nothing 0.67 and 0.66 in Gamble 2 and does not see as drastic a difference as from 0.01 to 0 in Gamble 1.
+
+Site used to understand more about Kahneman and Tversky: https://www.wired.com/2010/10/the-allais-paradox/
+
+#### Do you think this is reasonable even if it does not conform to expected utility theory?
+Yes because humans are not always rational.
+I would choose option B in gamble 1 myself.
+Even after reading about this I would prefer knowing that I will receive something rather then a small chance of getting nothing.
+Similarly in Gamble 2 the difference from 0.66 to .67 probability of getting nothing seems negligible therefore I would chose the option with the larger prize (C).
+
+# Problem 2
+
+First I set up an array for theta and the prior probability in R.
+
+```{r, echo=TRUE}
+p2.df <- NULL
+p2.df$theta <- seq(0.025, 0.975, length.out=20)
+p2.df$prior <- 1/20
+```
+
+## A
+
+In part A there are 2 out of 13 rats found with tumors.
+The code below shows how the posterior probability was calculated.
+
+```{r, echo=TRUE}
+a.rats <- 13
+a.tumor.rats <- 2
+
+p.A <- p2.df$prior*p2.df$theta^a.tumor.rats*(1-p2.df$theta)^(a.rats-a.tumor.rats)
+p2.df$postA <- p.A/sum(p.A)
+```
+
+```{r}
+p2.plot('A')
+```
+
+* Posterior Mean = `r filter(p2.sum.df, Problem == 'A')$Mean`
+* Posterior StDev = `r filter(p2.sum.df, Problem == 'A')$SD`
+
+## B
+
+In part B 1 out of 18 rats were found with tumors.
+In B we use the posterior found in A as the prior and not the equally distributed prior used in A.
+
+```{r, echo=TRUE}
+b.rats <- 18
+b.tumor.rats <- 1
+
+p.B <- p2.df$postA*p2.df$theta^b.tumor.rats*(1-p2.df$theta)^(b.rats-b.tumor.rats)
+p2.df$postB <- p.B/sum(p.B)
+```
+
+```{r}
+p2.plot('B')
+```
+
+* Posterior Mean = `r filter(p2.sum.df, Problem == 'B')$Mean`
+* Posterior StDev = `r filter(p2.sum.df, Problem == 'B')$SD`
+
+## C
+
+In C, 3 out of 31 rats have a tumor, and the original equally distributed prior is used.
+
+```{r, echo=TRUE}
+c.rats <- 31
+c.tumor.rats <- 3
+
+p.C <- p2.df$prior*p2.df$theta^c.tumor.rats*(1-p2.df$theta)^(c.rats-c.tumor.rats)
+p2.df$postC <- p.C/sum(p.C)
+```
+
+```{r}
+p2.plot('C')
+```
+
+* Posterior Mean = `r filter(p2.sum.df, Problem == 'C')$Mean`
+* Posterior StDev = `r filter(p2.sum.df, Problem == 'C')$SD`
+
+Both parts B and C result in the same posterior distribution.
+Below is a table showing the posterior probabilities for each part.
+
+```{r}
+p2.df %>%
+    as.data.frame(.) %>%
+    select(-prior)
+```
+

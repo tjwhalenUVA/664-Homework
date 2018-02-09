@@ -1,0 +1,95 @@
+---
+title: "SYST 664: HW Assignment 3"
+author: "Jake Whalen"
+date: "February 12, 2018"
+output: word_document
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      warning = F, 
+                      fig.align = 'center', 
+                      fig.width=6, 
+                      fig.height=3)
+```
+
+```{r}
+source("03_setup.R")
+source("03_problem_01.R")
+source("03_problem_02.R")
+```
+
+
+# Problem 1
+
+### Part A
+
+```{r}
+p1.a.plot
+```
+
+### Part B
+
+```{r}
+p1.b.plot
+```
+
+### Part C
+
+```{r}
+p1.c.plot
+```
+
+### Part D
+
+```{r}
+p1.d.plot
+```
+
+### Part E
+##### What do the results in parts a-d say about changes in farming in the population from which these data are drawn?
+
+Marginal probability of farming being an individuals occupation drops from fathers (`r filter(p1.a, father == 'farm')$Marginal`) to sons (`r filter(p1.b, son == 'farm')$Marginal`).
+If the father was a farmer then the son has a `r percent(filter(p1.c, son == 'farm')$Conditional)` probability of also taking up the farming occupation.
+If the son was a farmer then the father was a farmer with a `r percent(filter(p1.d, father == 'farm')$Conditional)` probability.
+Thus while farming may not be passed down at a high rate between these generations it also is not an occupation that the younger generation is flocking to.
+If the son is a farmer it is unlikely their father had a non-farming job.
+
+# Problem 2
+
+### Part A
+
+```{r}
+qqplot(exp.quant, interArrival, 
+       main='Exponential Q-Q Plot of Car Arrival Times', 
+       xlab='Theoretical Exponential Quantiles',ylab='Empirical Quantiles')
+lines(exp.quant, exp.quant *mean(interArrival))
+```
+
+Do you think an exponential distribution provides a good model for the interarrival times? 
+
+Justify your answer.
+
+### Part B
+
+```{r}
+p2.b.plot
+```
+
+Do you think a Poisson distribution provides a good model for the count data? 
+
+Justify your answer.
+
+### Part C
+
+```{r, fig.height=6}
+grid.arrange(p2.c.plot.1, 
+             p2.c.plot.2, 
+             nrow=2,
+             left='Posterior Probability',
+             bottom='# of Cars Passing Point (in 15 Second Blocks)')
+```
+
+Find the posterior mean, standard deviation, median and 95  percentile of Lambda given the observations. 
+
+Describe what your results mean in terms of traffic on this motorway.
