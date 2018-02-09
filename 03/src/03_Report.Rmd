@@ -93,3 +93,8 @@ grid.arrange(p2.c.plot.1,
 Find the posterior mean, standard deviation, median and 95  percentile of Lambda given the observations. 
 
 Describe what your results mean in terms of traffic on this motorway.
+
+```{r, fig.height=10, fig.width=7}
+seq.plot
+```
+
