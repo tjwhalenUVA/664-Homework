@@ -16,7 +16,9 @@ knitr::opts_chunk$set(echo = F,
 ```{r}
 source("03_setup.R")
 source("03_problem_01.R")
-source("03_problem_02.R")
+source("03_problem_02_A.R")
+source("03_problem_02_B.R")
+source("03_problem_02_C.R")
 ```
 
 
@@ -53,48 +55,136 @@ Marginal probability of farming being an individuals occupation drops from fathe
 If the father was a farmer then the son has a `r percent(filter(p1.c, son == 'farm')$Conditional)` probability of also taking up the farming occupation.
 If the son was a farmer then the father was a farmer with a `r percent(filter(p1.d, father == 'farm')$Conditional)` probability.
 Thus while farming may not be passed down at a high rate between these generations it also is not an occupation that the younger generation is flocking to.
-If the son is a farmer it is unlikely their father had a non-farming job.
+If the son is a farmer it is likely their father was a farmer.
 
 # Problem 2
 
 ### Part A
+##### Do you think an exponential distribution provides a good model for the interarrival times?
 
-```{r}
-qqplot(exp.quant, interArrival, 
-       main='Exponential Q-Q Plot of Car Arrival Times', 
-       xlab='Theoretical Exponential Quantiles',ylab='Empirical Quantiles')
-lines(exp.quant, exp.quant *mean(interArrival))
+First I wanted to explore a variety of distributions to see if any fit the data better then an exponential.
+The chart below shows the kurtosis and squared skewness of the inter-arrival sample plotted as a blue point ("Observation").
+I also conducted bootstrap sampling using 500 observations to see a range of possible observations from the data.
+
+![Distribution Exploration](C:/Users/e481340/Documents/GMU MASTERS/SYST 664/664 - Homework/03/src/Images/2A_DescPlot.png){width=500px}
+
+From the graph the possible distributions include the Gamma, and Exponential.
+The beta distribution was ruled out because the data was not between 0 and 1.
+
+First I fit an exponential distribution to the data.
+
+```{r, echo=TRUE}
+fit.exp <- fitdist(interArrival, "exp")
 ```
 
-Do you think an exponential distribution provides a good model for the interarrival times? 
+The plot below helps to visualize the fit for the exponential distribution.
 
-Justify your answer.
+![Exponential Distribution](C:/Users/e481340/Documents/GMU MASTERS/SYST 664/664 - Homework/03/src/Images/2A_ExpPlot.png){width=450px}
+
+Next I fit a gamma distribution to the data.
+
+```{r, echo=TRUE}
+fit.gam <- fitdist(interArrival, "gamma")
+```
+
+The plot below helps to visualize the fit for the gamma distribution.
+
+![Gamma Distribution](C:/Users/e481340/Documents/GMU MASTERS/SYST 664/664 - Homework/03/src/Images/2A_GamPlot.png){width=450px}
+
+Both distributions look good when fitted on the data and plotted above.
+The QQ-Plot for the exponential looks slightly better.
+Not enough to make a claim however that the exponential fits better then Gamma.
+Also by inspecting the fits AIC and BIC the exponentials' are lower then the Gammas'.
+```{r, echo=TRUE}
+summary(fit.exp)
+summary(fit.gam)
+```
+
+After inspecting the plots above and summary of the fits it is safe to say the exponential distribution provides a good model for the inter-arrival times.
 
 ### Part B
+##### Do you think a Poisson distribution provides a good model for the count data?
 
-```{r}
-p2.b.plot
+First I generated the count data from the inter-arrival data.
+
+```{r, echo=TRUE}
+car.df <-
+    data.frame('iat' = interArrival) %>%
+    mutate(actualT = cumsum(iat), 
+           tmp=actualT/15, 
+           group = ceiling(tmp))
+
+# Compare empirical and theoretical distributions for car arrivals
+Which15Sec <- car.df$group  # Unit in which each car arrived
+CarsBy15Sec <- tabulate(Which15Sec) # Counts of cars arrived in each unit
 ```
 
-Do you think a Poisson distribution provides a good model for the count data? 
+Then I wanted to explore a variety of distributions to see if any looked like possible fits other than Poisson.
+The chart below shows the kurtosis and squared skewness of the count data sample plotted as a blue point ("Observation").
 
-Justify your answer.
+![Distribution Exploration](C:/Users/e481340/Documents/GMU MASTERS/SYST 664/664 - Homework/03/src/Images/2B_DescDist.png){width=500px}
+
+It looks like the Poisson and normal may be the best distributions to model the data.
+To begin analyzing the best model I fit a Poisson distribution on the count data.
+
+```{r, echo=TRUE}
+fit.pois <- fitdist(CarsBy15Sec, "pois")
+```
+
+![Poisson Distribution](C:/Users/e481340/Documents/GMU MASTERS/SYST 664/664 - Homework/03/src/Images/2B_PoisPlot.png){width=450px}
+
+The plot above shows the observations against the theoretical values for the Poisson distribution.
+Both the pdf and cdf empirical values follow the theoretical values well.
+
+Next I fit the normal distribution to see if there was another distribution that might model the count data well.
+
+```{r, echo=TRUE}
+fit.norm <- fitdist(CarsBy15Sec, 'norm', discrete = TRUE)
+```
+
+![Normal Distribution](C:/Users/e481340/Documents/GMU MASTERS/SYST 664/664 - Homework/03/src/Images/2B_NormPlot.png){width=450px}
+
+The Poisson model seems to fit the data better in both plots.
+The CDF plot of the normal looks like a much worse fit then the Poisson does.
+I also inspected the summaries of the fits.
+The Poisson distribution has the lower AIC and BIC.
+
+```{r, echo=TRUE}
+summary(fit.pois)
+summary(fit.norm)
+```
+
+After inspecting the plots above and summary of the fits it is safe to say the Poisson distribution provides a good model for the count data.
 
 ### Part C
+##### Find the posterior mean, standard deviation, median and 95th percentile of lambda given the observations.
+
+The plots below show the posterior mean, standard deviation, median and 95th percentile.
 
 ```{r, fig.height=6}
-grid.arrange(p2.c.plot.1, 
-             p2.c.plot.2, 
+grid.arrange(p2.c.plot.1,
+             p2.c.plot.2,
              nrow=2,
              left='Posterior Probability',
              bottom='# of Cars Passing Point (in 15 Second Blocks)')
 ```
 
-Find the posterior mean, standard deviation, median and 95  percentile of Lambda given the observations. 
+The actual values are as follows:
 
-Describe what your results mean in terms of traffic on this motorway.
+* Mean: `r round(postMean, 3)`
+* Standard Deviation: `r round(postSD, 3)`
+* Median: 2.0
+* 95th Percentile: 2.4
 
-```{r, fig.height=10, fig.width=7}
+##### Describe what your results mean in terms of traffic on this motorway.
+
+The plot below shows how the posterior inter-arrival distribution changes with each successive unit of 15 seconds of data collected.
+The posterior distribution in green is altered less and less as the amount of data collected grows.
+The mean of the posterior begins to settle in on `r round(postMean, 3)`.
+
+```{r, fig.height=7, fig.width=7}
 seq.plot
 ```
 
+Based on what we know, the data suggests that every 15 seconds there will be about `r round(postMean, 1)` (+/- `r round(postSD, 3)`) cars passing this point.
+Without knowing the time of day or area this data was collected it is tough to say much more about the highway traffic and whether this was higher or lower then the daily average.
