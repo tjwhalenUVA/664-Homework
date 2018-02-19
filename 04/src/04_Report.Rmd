@@ -1,0 +1,196 @@
+---
+title: 'SYST 664: HW Assignment 4'
+author: "Jake Whalen"
+date: "February 19, 2018"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r chunkOpts, echo=FALSE}
+knitr::opts_chunk$set(echo = F, 
+                      warning = F, 
+                      fig.align = 'center', 
+                      fig.width=6, 
+                      fig.height=3, 
+                      comment='')
+```
+
+```{r setup}
+source("04_setup.R")
+```
+
+```{r p1}
+source("04_problem_01.R")
+```
+
+```{r p2}
+source("04_problem_02.R")
+```
+
+```{r p3}
+source("04_problem_03.R")
+```
+
+```{r p4}
+source("04_problem_04.R")
+```
+
+# Problem 1
+
+This problem continues analysis of the automobile traffic data from Assignment 3.
+Transforming the arrival times to counts of cars in each 15-second interval gives the following table of counts:
+
+```{r}
+knitr::kable(data.frame('Number of Cars' = cars,
+                        'Number of Occurences' = occurences))
+```
+
+The problem says to assume a Poisson likelihood and a uniform prior distribution for the unknown rate lambda.
+The footnote says to create a uniform prior by using a gamma distribution with a Shape equal to `r gamma_shape` and Scale equal to `r gamma_scale`.
+
+To find the shape for the posterior distribution first find the total number of cars.
+
+```{r, echo=TRUE}
+sum(cars * occurences)
+```
+
+Next add the priors' shape to the total number of cars to get the posterior shape.
+
+```{r, echo=TRUE}
+gamma_shape + sum_xi
+```
+
+Then to find the scale calculate the total number of time periods observed.
+
+```{r, echo=TRUE}
+sum(occurences)
+```
+
+Divide the prior scale by the product of the prior scale and number of time periods plus one.
+This results in the posterior scale parameter.
+
+```{r, echo=TRUE}
+gamma_scale / (1 + N * gamma_scale)
+```
+
+Last use the dgamma() function in R to calculate the posterior distribution over a range for lambda.
+
+Posterior Plot
+
+```{r}
+p1_post_plot
+```
+
+The next step is to find the mean, standard deviation, median and mode of the posterior distribution as well as a 95% symmetric tail area credible interval for lambda.
+The table below shows these statistics as well as the values from the previous assignments solution.
+
+```{r}
+knitr::kable(as.data.frame(p1_stats))
+```
+
+The differences between the results from assignment 3 and this problem are minimal.
+Both processes for finding the posterior distribution resulted in similar distributions.
+
+# Problem 2
+
+Suppose a highway engineer provided the following prior judgments about the rate of traffic on the
+stretch of highway (before seeing the data).
+
+```{r}
+knitr::kable(as.data.frame(p2_known))
+```
+
+Find a Gamma prior distribution that matches these judgments reasonably well.
+
+### Deriving Parameters
+
+First find the parameters of this Gamma distribution using the engineers judgement.
+To find a shape value I hold the scale equal to 1 and adjust the shape value.
+I continue adjusting the shape in order to match the ratio (90th / 50th percentiles) as close as possible to the ratio below using the engineers judgement.
+
+```{r, echo=TRUE}
+p2_q90 / p2_q50
+```
+
+Below is a function for calculating the ratio for shape k.
+
+```{r, echo=TRUE}
+f <- function(k){qgamma(.9, k, 1)/qgamma(.5, k, 1)}
+```
+
+The code below finds the best value for the shape.
+It does so by minimizing the difference between the new and original ratios as described above.
+It inspects all values between 0.1 and 4 for the shape.
+
+```{r, echo=TRUE}
+p2_alpha <- uniroot(function(k){f(k)-p2_q90 / p2_q50}, c(0.1, 4))$root
+```
+
+After finding the optimal shape value we can calculate the scale using the equation below.
+This equation divides the engineers judgement of the median by the median calculated using the new shape and a scale of 1.
+
+```{r, echo=TRUE}
+p2_beta <- p2_q50 / qgamma(.5, p2_alpha, 1)
+```
+
+Below is a table showing the results of the analysis done above deriving the scale and shape of the gamm distribution.
+
+```{r}
+knitr::kable(as.data.frame(p2_parameters))
+```
+
+Comparing the derived Gamma prior to the engineers judgement below there is only one differing value.
+The derived distribution matches the engineers judgement very well for the median and 90th percentile.
+The difference in the 10th percentile however is only 0.2.
+
+```{r, fig.align='center'}
+knitr::kable(as.data.frame(p2_comparison) %>%
+                 mutate(Gamma = round(Gamma, 2)))
+```
+
+Below is a plot of the derived prior gamma distribution.
+
+```{r}
+p2.plot
+```
+
+The table below compares this derived prior to the resulting distribution percentiles when the data is know (Problem 1).
+
+```{r}
+knitr::kable(as.data.frame(anyGood_comparison))
+```
+
+The derived distribution from the engineer judgement does not match the results of the distribution based on the data very well.
+However using this distribution would be better then using the uniform distribution.
+
+# Problem 3
+
+Problem 3 simply repeats the steps from Problem 1 using the prior distribution from Problem 2. Below is the resulting posterior plot.
+
+```{r}
+p3.plot
+```
+
+The pink line 'p2_density' is the prior from problem 2.
+The blue line represents the posterior that was just calculated for problem 3.
+The table below shows the stats from the three problems involving this data (including last assignments).
+
+```{r}
+knitr::kable(as.data.frame(p3_stats))
+```
+
+The distributions statistics have changed slightly from problem to problem.
+None have changed drastically.
+Overall the distribution seems to be remaining steady in all areas.
+
+# Problem 4
+
+```{r}
+p4.plot
+```
+
+The plot above shows the triplot of the prior, normalized likelihood and posterior from problem 3.
+The plot shows that the posterior matched the data (normalized likelihood) well.
+The prior, derived from the engineers judgement, resulted in a posterior that followed the normalized likelihood.
+Using the engineers judgement helped achieve a posterior that matched the real world well.
