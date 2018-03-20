@@ -1,0 +1,31 @@
+---
+title: 'SYST 664: Assignment 6'
+author: "Jake Whalen"
+date: "March 20, 2018"
+output: 
+  html_document: 
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+```
+
+```{r packages}
+source("src/_setup.R")
+```
+
+# Problem 1
+Concentrations of the pollutants aldrin and hexachlorobenzene (HCB) in nanograms per liter were measured in ten surface water samples, ten mid-depth water samples, and ten bottom samples from the Wolf River in Tennessee.
+The samples were taken downstream from an abandoned dump site previously used by the pesticide industry.
+The full data set can be found at http://www.biostat.umn.edu/~lynn/iid/wolf.river.dat.
+The code below reads this data set into R.
+
+```{r, echo=T}
+
+```
+
+For this problem, we consider only HCB measurements taken at the bottom and the surface.
+The question of interest is whether the distribution of HCB concentration depends on the depth at which the measurement was taken.
+The data for this problem are given below.
