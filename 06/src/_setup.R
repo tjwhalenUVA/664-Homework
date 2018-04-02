@@ -1,1 +1,2 @@
-library(tidyverse)
+suppressMessages(library(tidyverse))
+# suppressMessages(library(NormalGamma))

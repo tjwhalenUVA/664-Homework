@@ -2,17 +2,22 @@
 title: 'SYST 664: Assignment 6'
 author: "Jake Whalen"
 date: "March 20, 2018"
-output: 
-  html_document: 
+output:
+  word_document:
+    toc: yes
+  html_document:
     toc: yes
     toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(echo = T,
+                      fig.width = 6,
+                      fig.height = 4,
+                      warning = F)
 ```
 
-```{r packages}
+```{r packages, echo=F}
 source("src/_setup.R")
 ```
 
@@ -22,10 +27,502 @@ The samples were taken downstream from an abandoned dump site previously used by
 The full data set can be found at http://www.biostat.umn.edu/~lynn/iid/wolf.river.dat.
 The code below reads this data set into R.
 
-```{r, echo=T}
+```{r}
+#URL of data given in assignment
+www <- "http://www.biostat.umn.edu/~lynn/iid/wolf.river.dat"
 
+#Read in the data
+pollutants <- read.table(www, header=TRUE, stringsAsFactors = F)
 ```
 
 For this problem, we consider only HCB measurements taken at the bottom and the surface.
 The question of interest is whether the distribution of HCB concentration depends on the depth at which the measurement was taken.
 The data for this problem are given below.
+
+```{r}
+pollutants %<>%
+    mutate(id = rep(seq(1, 10, by = 1), 3)) %>%
+    select(-Aldrin) %>%
+    spread(Depth, HCB) %>%
+    select(-id, -Middepth)
+knitr::kable(pollutants)
+```
+
+Assume the observations are independent normal random variables with unknown depth-specific means $\theta_s$ and $\theta_b$ and precisions $P_s$ and $P_b$.
+Assume independent improper reference priors for the surface and bottom parameters:
+$$g(\theta_s, \theta_b, P_s, P_b) = g(\theta_s, P_s) g(\theta_b, P_b) \propto \rho_s^{-1}\rho_b^{-1}$$
+
+
+This prior can be treated as a normal-gamma prior with $\mu$ = 0, $k$ = 0, $\alpha$ = -1/2, and $\beta$ = $\infty$.
+(This is not a valid normal-gamma distribution, but you can do the usual Bayesian conjugate updating to find the posterior distribution.)
+Find the joint posterior distribution for the parameters ($\theta_s$, $P_s$, $\theta_b$, $P_b$).
+
+First I define variables for the prior distributions parameters.
+
+```{r}
+#mu
+prior.center <- 0
+#k
+prior.precision <- 0
+#alpha
+prior.shape <- -1/2
+#beta
+prior.scale <- 'infinity'
+```
+
+Another variable I will define now since it does not change between the depth groupings is the number of observations.
+The table above shows that at each depth there are `r nrow(pollutants)` new observations.
+
+```{r}
+#Number of Observations
+n <- nrow(pollutants)
+```
+
+### Bottom Concentrations
+
+There are two additional values to go along with the number of observations (sample mean, and Sum of Squared Deviations).
+All of these values get used next to update the distribution parameters.
+
+```{r}
+#Sample Mean
+bottom.mean <- sum(pollutants$Bottom) / n
+bottom.mean
+```
+```{r}
+#Sum of Squared Deviations
+bottom.ssd <- sum((pollutants$Bottom - bottom.mean) ^ 2)
+bottom.ssd
+```
+
+Now using the values I just calculated I will update the posterior distribution parameters for the measurements recorded near the bottom.
+
+```{r}
+#Center
+bottom.center <- ((prior.precision * prior.center) + (n * bottom.mean)) / (prior.precision + n)
+#Precision
+bottom.precision <- prior.precision + n
+#shape
+bottom.shape <- prior.shape + 1/2 * n
+#scale
+bottom.scale <- (1/2 * bottom.ssd + (prior.precision * n * (bottom.mean - prior.center) ^ 2) / (2 * (prior.precision + n))) ^ -1
+#Spread
+bottom.spread <- 1 / sqrt(bottom.precision * bottom.scale * bottom.shape)
+#Degrees of Freedom
+bottom.dof <- 2 * bottom.shape
+```
+
+I then use the `dt` function in `R` to calculate the density over a range for $\theta_b$.
+
+```{r}
+bottom.density <-
+    data.frame('Mean' = seq(-5, 5, length.out = 200)) %>%
+    mutate('Density' = dt(Mean, df = bottom.dof)/bottom.spread,
+           Depth = 'Bottom',
+           Mean = Mean + bottom.center)
+```
+
+### Surface Concentrations
+
+I follow the same steps for the measurements taken near the surface.
+First I calculate the helpful metrics from the data.
+
+```{r}
+#Sample Mean
+surface.mean <- sum(pollutants$Surface) / n
+surface.mean
+```
+```{r}
+#Sum of Squared Deviations
+surface.ssd <- sum((pollutants$Surface - surface.mean) ^ 2)
+surface.ssd
+```
+
+Then I update the posterior parameters.
+
+```{r}
+#Center
+surface.center <- ((prior.precision * prior.center) + (n * surface.mean)) / (prior.precision + n)
+#Precision
+surface.precision <- prior.precision + n
+#shape
+surface.shape <- prior.shape + 1/2 * n
+#scale
+surface.scale <- (1/2 * surface.ssd + (prior.precision * n * (surface.mean - prior.center) ^ 2) / (2 * (prior.precision + n))) ^ -1
+#Spread
+surface.spread <- 1 / sqrt(surface.precision * surface.scale * surface.shape)
+#Degrees of Freedom
+surface.dof <- 2 * surface.shape
+```
+
+Last I calculate the density and store in a `data.frame` in R.
+
+```{r}
+surface.density <-
+    data.frame('Mean' = seq(-5, 5, length.out = 200)) %>%
+    mutate('Density' = dt(Mean, df = surface.dof)/surface.spread,
+           Depth = 'Surface',
+           Mean = Mean + surface.center)
+```
+
+### Comparing Concetrations by Depth
+
+Putting both densities together I can then visualize the joint posterior as the individual posteriors for the _bottom_ and _surface_ depth measurements.
+
+```{r}
+bind_rows(surface.density, bottom.density) %>%
+    ggplot(aes(x = Mean,
+               y = Density,
+               color = Depth)) +
+    geom_line(stat = 'identity') +
+    labs(title = 'Joint Posterior Distributions',
+         x = 'Mean HCB Concentration') +
+    theme_classic()
+```
+
+The next task for the assignment is to find 90% posterior credible intervals (CI) for $\theta_s$, $P_s$, $\theta_b$, and $P_b$.
+I can accomplish this by doing it in two steps for each depth level.
+The first step will find the CI for $\theta$ and the second for $P$.
+
+I begin with the bottom depth concentrations.
+First I find the 0.95 quantile of the t distribution with `r bottom.dof` degrees of freedom.
+
+```{r}
+bottom.t.95 <- qt(0.95, bottom.dof)
+```
+
+Then I use this quantile with the center and spread parameters to calculate the 95% CI for $\theta_b$.
+
+```{r}
+bottom.theta.05 <- bottom.center - bottom.t.95 * bottom.spread
+bottom.theta.95 <- bottom.center + bottom.t.95 * bottom.spread
+```
+
+The second step solves for the 0.05 and 0.95 quantiles of the gamma(`r bottom.shape`, `r bottom.scale`) distribution.
+This provides the 90% CI for the $P_b$ parameter.
+
+```{r}
+bottom.P.05 <- qgamma(.05, shape = bottom.shape, scale = bottom.scale)
+bottom.P.95 <- qgamma(.95, shape = bottom.shape, scale = bottom.scale)
+```
+
+I repeat these two steps again for the surface level concentration measurements.
+
+```{r}
+#theta
+surface.t.95 <- qt(0.95, surface.dof)
+surface.theta.05 <- surface.center - surface.t.95 * surface.spread
+surface.theta.95 <- surface.center + surface.t.95 * surface.spread
+#P
+surface.P.05 <- qgamma(.05, shape = surface.shape, scale = surface.scale)
+surface.P.95 <- qgamma(.95, shape = surface.shape, scale = surface.scale)
+```
+
+Resulting posterior credible intervals.
+
+```{r, echo=F}
+knitr::kable(
+    data.frame('Parameter' = c('Theta', 'P'),
+               'Surface' = c(sprintf('[%s, %s]', round(surface.theta.05, 2), round(surface.theta.95, 2)),
+                             sprintf('[%s, %s]', round(surface.P.05, 2), round(surface.P.95, 2))),
+               'Bottom' = c(sprintf('[%s, %s]', round(bottom.theta.05, 2), round(bottom.theta.95, 2)),
+                            sprintf('[%s, %s]', round(bottom.P.05, 2), round(bottom.P.95, 2))))
+)
+```
+
+```{r, echo=F}
+p1.ci.df <- data.frame('Parameter' = c('Theta', 'P'),
+                       'Surface Posterior' = c(sprintf('[%s, %s]', round(surface.theta.05, 2), round(surface.theta.95, 2)),
+                                     sprintf('[%s, %s]', round(surface.P.05, 2), round(surface.P.95, 2))),
+                       'Bottom Posterior' = c(sprintf('[%s, %s]', round(bottom.theta.05, 2), round(bottom.theta.95, 2)),
+                                    sprintf('[%s, %s]', round(bottom.P.05, 2), round(bottom.P.95, 2))))
+```
+
+The 90% CI's for the $\theta$ parameters do not overlap.
+The HCB concentration looks like it may be lower at the surface compared to the concentrations levels at the bottom.
+This is seen in the seperation between the distributions in the graph.
+It is also obvious when looking at the CI values in the table.
+The graph helps show the differences in the spread between the two distributions.
+The distribution specific to the surface concentrations is much tighter and less spread out then the distribution for the bottom concentrations.
+There may be a difference between the two depths concntrations of the HCB pollutant but more analysis is required in order to support that claim.
+
+# Problem 2
+
+Use direct Monte Carlo to sample 10,000 observations from the joint posterior distribution of ($\theta_s$, $\theta_b$, $P_s$, $P_b$).
+
+The code below is a function I wrote that takes the code supplied in the slides and makes the monte carlo process reproducible.
+
+```{r}
+p2_mc <- function(depth){
+    x <- pollutants[,depth]
+    xbar <- mean(x)
+    n <- length(x)
+    # Assume non-informative prior distribution
+    # Normal-Gamma with mu0=0, k0=0, alpha0=-1/2, beta0=infinity
+    # Posterior hyperparameters mu1, k1, alpha1, beta1
+    mu1 <- xbar
+    k1 <- n
+    alpha1 <- -1/2 + n/2
+    beta1 <- 1/(0.5*sum((x-xbar)^2))
+    spread1 <- sqrt(1/(k1*alpha1*beta1))
+    #Theoretical marginal density for theta
+    thetaVals <- seq(xbar - sd(x), xbar + sd(x), by = 0.01)
+    stdVals <- (thetaVals - mu1)/spread1
+    thetaMargDens <- dt(stdVals,df=2*alpha1)/spread1
+    #Set simulation sample size
+    numSim <- 10000
+    # Simulate directly from the posterior distribution 
+    rhoDirect <- rgamma(numSim,shape=alpha1,scale=beta1)
+    sigmaDirect <- 1/sqrt(rhoDirect)
+    thetaDirect <- rnorm(numSim,mean=xbar,sd=sigmaDirect/sqrt(n))
+    #Plot theoretical and Monte Carlo density functions
+    compare.plot <-
+        ggplot() +
+        geom_line(data = data.frame('x' = thetaVals,
+                                    'density' = thetaMargDens),
+                  aes(x=x,
+                      y=density, 
+                      color = 'Theoretical')) +
+        geom_line(data = data.frame('x' = thetaDirect), 
+                     aes(x=x, 
+                         color = 'Monte Carlo'),
+                  stat = 'density') +
+        labs(title = sprintf('Monte Carlo Estimate for %s Depth', depth),
+             y='Density',
+             x='Theta') +
+        theme_classic() +
+        xlim(c(xbar - sd(x), xbar + sd(x)))
+    #Return a list with a plot and the monte carlo simulated values
+    res <- list('plot' = compare.plot,
+                'thetaVals' = thetaDirect,
+                'rhoVals' = rhoDirect,
+                'sigmaVals' = sigmaDirect)
+    return(res)
+}
+```
+
+The resulting plots comparing the exact to monte carlo distributions are below.
+
+```{r}
+p2_mc('Bottom')$plot
+```
+
+```{r}
+p2_mc('Surface')$plot
+```
+
+Another shows the two monte carlo esimates on the same axes.
+
+```{r, echo=F}
+data.frame('Surface' = p2_mc('Surface')$thetaVals,
+           'Bottom' = p2_mc('Bottom')$thetaVals) %>%
+    gather(Depth, Sample) %>%
+    ggplot() +
+    geom_density(aes(x=Sample,
+                     fill=Depth),
+                 alpha = 0.4) +
+    labs(title = 'Monte Carlo Estimated Distributions',
+         x = 'Theta',
+         y = 'Density') +
+    theme_classic() +
+    xlim(c(4, 7))
+```
+
+
+
+Use your Monte Carlo samples to estimate 90% posterior credible intervals for $\theta_s$, $\theta_b$, $P_s$, and $P_b$.
+
+```{r}
+mc.surface.theta.ci <- quantile(p2_mc('Surface')$thetaVals, probs = c(.05, .95))
+mc.surface.rho.ci <- quantile(p2_mc('Surface')$rhoVals, probs = c(.05, .95))
+
+mc.bottom.theta.ci <- quantile(p2_mc('Bottom')$thetaVals, probs = c(.05, .95))
+mc.bottom.rho.ci <- quantile(p2_mc('Bottom')$rhoVals, probs = c(.05, .95))
+```
+
+The table below shows the CI from the monte carlo estimates.
+I have included the posterior CI values to compare with the results from Problem 1.
+
+```{r, echo=F}
+knitr::kable(
+    data.frame('Parameter' = c('Theta', 'P'),
+               'Surface MC' = c(sprintf('[%s, %s]', 
+                                     round(mc.surface.theta.ci[1], 2),
+                                     round(mc.surface.theta.ci[2], 2)),
+                             sprintf('[%s, %s]', 
+                                     round(mc.surface.rho.ci[1], 2),
+                                     round(mc.surface.rho.ci[2], 2))),
+               'Bottom MC' = c(sprintf('[%s, %s]', 
+                                    round(mc.bottom.theta.ci[1], 2),
+                                    round(mc.bottom.theta.ci[2], 2)),
+                            sprintf('[%s, %s]', 
+                                    round(mc.bottom.rho.ci[1], 2),
+                                    round(mc.bottom.rho.ci[2], 2)))) %>%
+        left_join(.,
+                  p1.ci.df,
+                  by='Parameter') %>%
+        select(Parameter, contains('Surface'), contains('Bottom'))
+)
+```
+
+The 90% CI's from the monte carlo estimates are very close to the CI's from the posterior distribution.
+There are small differences in a few of the values but none of the differences exceeds 0.01.
+The monte carlo estimates suggest that the HCB concentrations are lower at the surface and more consistent at the surface as well.
+The concentrations near the bottom have greater spread.
+
+# Problem 3
+
+Use your direct Monte Carlo sample to estimate the probability that the mean bottom concentration $\theta_b$ is higher than the mean surface concentration $\theta_s$ and to estimate the probability that the standard deviation $\Sigma_b$ of the bottom concentrations is higher than the standard deviation $\Sigma_s$ of the surface concentrations.
+I start by finding the number of instances where the monte carlo estimates for the bottom are higher then the surface.
+I also count the total number of monte carlo estimates returned (samples).
+
+```{r}
+bottom.theta.higher <- sum(p2_mc('Bottom')$thetaVals - p2_mc('Surface')$thetaVals > 0)
+bottom.sigma.higher <- sum(p2_mc('Bottom')$sigmaVals - p2_mc('Surface')$sigmaVals > 0)
+samples <- length(p2_mc('Bottom')$thetaVals)
+```
+
+Then I divide the counts where the bottom estimate was greater then the surface and divide by the total number of estimates to get the probability.
+
+```{r, echo=F}
+knitr::kable(
+    data.frame('Parameter' = c('Theta', 'StDev'),
+               'b' = c(bottom.theta.higher, bottom.sigma.higher),
+               'samples' = c(samples, samples),
+               'p' = c(scales::percent(bottom.theta.higher/samples),
+                       scales::percent(bottom.sigma.higher/samples))),
+    col.names = c('Parameter', 'Bottom>Surface', '#Samples', 'P(B>S)'),
+    align = c('c','c','c','c')
+)
+```
+
+Both probabilities $P(\theta_b > \theta_s)$ and $P(\Sigma_b > \Sigma_s)$ are high.
+Neither is lower then `r round(min(bottom.theta.higher/samples,bottom.sigma.higher/samples), 3)`.
+
+# Problem 4
+
+### What are your conclusions about the distributions of surface and bottom concentrations?
+
+The surface and botom concentrations are not the same.
+This is seen in the graphs above of the posterior and monte carlo estimated distributions.
+Another way to look at the two depths difference in concentrations is through a boxplot of the monte carlo values and observed values.
+
+```{r, echo=F}
+data.frame('Surface' = p2_mc('Surface')$thetaVals,
+           'Bottom' = p2_mc('Bottom')$thetaVals) %>%
+    gather(Depth, Theta) %>%
+    ggplot(aes(x=Depth, y=Theta, fill=Depth)) +
+    geom_boxplot(show.legend = F) +
+    theme_classic() +
+    labs(title='Monte Carlo Estimated Concentration',
+         y='Mean HCB Concentration')
+```
+
+The boxplot of the monte carlo estimates shows that the mean concentrations measured at the surface depth are lower then the HCB mean concentrations measured near the bottom.
+
+```{r, echo=F}
+data.frame('Surface' = pollutants$Surface,
+           'Bottom' = pollutants$Bottom) %>%
+    gather(Depth, Theta) %>%
+    ggplot(aes(x=Depth, y=Theta, fill=Depth)) +
+    geom_boxplot(show.legend = F) +
+    theme_classic() +
+    labs(title='Observed Concentration',
+         y='Mean HCB Concentration')
+```
+
+The data agrees with the monte carlo estimates.
+The two depths have different mean HCB concentration levels.
+
+### Is the assumption of normality reasonable?
+
+I first examine the observations from the bottom depth.
+A qqplot is a visual way to inspect the data in comparison to a normal distributon.
+
+```{r}
+qqnorm( pollutants$Bottom, main='Bottom' )
+qqline( pollutants$Bottom )
+```
+
+The qqplot for the bottom data looks good.
+There are no places along the line where the data tails off.
+Another way to test for a normal distribution is by using the Shapiro-Wilk test of normality.
+
+```{r}
+shapiro.test(pollutants$Bottom)
+```
+
+The p-value from the test is > .05 thus the normal distribution can not be rejected as a fit to this data at the 95% confidence level.
+
+Next I inspect the measurements taken near the surface.
+
+```{r}
+qqnorm(pollutants$Surface, main='Surface')
+qqline( pollutants$Surface )
+```
+
+The qqplot for the bottom data looks good.
+There are no places along the line where the data tails off.
+Then I use the Shapiro-Wilk test of normality.
+
+```{r}
+shapiro.test(pollutants$Surface)
+```
+
+The p-value from the test is > .05 thus the normal distribution can not be rejected as a fit to this data at the 95% confidence level.
+
+### Are the means different for surface and bottom?
+
+I used a standard two sample t-test to compare the mean of the two populations.
+I started by using the observed concentrations.
+
+```{r}
+Surface.Mean.O <- pollutants$Surface
+Bottom.Mean.O <- pollutants$Bottom
+t.test(Surface.Mean.O, Bottom.Mean.O)
+```
+
+The p-value is less then .05 for this test thus we can reject the null hypothesis that the two means are equal.
+
+I then performed a t-test using he estimated theta values from the monte carlo simulation.
+
+```{r}
+Surface.Mean.MC <- p2_mc('Surface')$thetaVals
+Bottom.Mean.MC <- p2_mc('Bottom')$thetaVals
+t.test(Surface.Mean.MC, Bottom.Mean.MC)
+```
+
+Again the p-value was lower then .05 so at the 95% confidence level the null hypothesis can be rejected.
+The true difference between the mean concentrations at the surface and bottom is not equal to 0 based on the observed data and monte carlo simulated results.
+
+### The standard deviations?
+
+I created two vectors containing the resulting standard deviations from the monte carlo results.
+
+```{r}
+Surface.Sigma.MC <- p2_mc('Surface')$sigmaVals
+Bottom.Sigma.MC <- p2_mc('Bottom')$sigmaVals
+```
+
+I visually inspected these by plotting the distribution of standard deviations from the monte carlo simulation.
+
+```{r}
+data.frame('Surface' = Surface.Sigma.MC,
+           'Bottom' = Bottom.Sigma.MC) %>%
+    gather(Depth, Sigma) %>%
+    ggplot() +
+    geom_density(aes(x=Sigma,
+                     fill=Depth),
+                 alpha = 0.4) +
+    theme_classic() +
+    labs(title='Monte Carlo Standard Deviations',
+         y='Desnity')
+```
+
+From the plot of the distributions it looks like the standard deviations are not the same.
+The standard deviation for the bottom concentrations appear to be larger then the surface standard deviation.
+
+```{r}
+t.test(Surface.Sigma.MC, Bottom.Sigma.MC)
+```
+
+The t-test confirms there is a difference not equal to 0 between the bottom and surface standard deviation values.
