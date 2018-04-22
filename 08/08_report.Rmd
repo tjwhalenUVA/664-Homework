@@ -1,0 +1,411 @@
+---
+title: "Assignment 8"
+author: "Jake Whalen"
+date: "April 10, 2018"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message=FALSE)
+```
+
+```{r}
+#Packages
+library(tidyverse)
+library(magrittr)
+```
+
+
+# Problem 1
+
+Section 18.4 of Gelman, et al. analyzes data on reaction times for 11 non-schizophrenic and 6 schizophrenic subjects.
+The data set can be found at this URL: http://www.stat.columbia.edu/~gelman/book/data/schiz.asc.
+The first 11 rows are data for the non-schizophrenic subjects.
+Gelman, et al. assume that the logarithms of the response times for each non-schizophrenic subject are independent and identically distributed normal random variables with person-specific mean $\theta_j (j = 1,…11)$ and common variance $\sigma^2$.
+Discuss whether you think this assumption is reasonable.
+
+I first read the data into R from the URL.
+I added a column (_condition_) that marked the first 11 rows as having schizophrenia and the last 6 as not having the condition.
+
+```{r}
+#Data URL
+www <- "http://www.stat.columbia.edu/~gelman/book/data/schiz.asc"
+#Read and Wrangle
+ppl <- read.table(www, skip = 5) %>% 
+    mutate(condition = rep(c("non-schizophrenics", "schizophrenics"), 
+                           c(11, 6)))
+```
+
+For the purposes of this assignment we are only concerned with the non-schizophrenic subjects reaction times.
+I filtered the data frame to only include the 11 non-schizophrenic subjects.
+I then dropped this variable since it was no longer needed and added a variable (_subject_) to differentiate between the 11 subjects.
+The problem also states we are assuming the log reaction times are normally distributed thus I transformed the given times using the `log()` equation in R and assigned the results to the variable _lms_ in the data frame.
+
+```{r}
+nschiz <- ppl %>%
+    filter(., condition == 'non-schizophrenics') %>% 
+    select(-condition) %>%
+    mutate(subject = sprintf("p%s", 1:11)) %>%
+    gather(reaction, ms, -subject) %>%
+    mutate(lms = log(ms))
+```
+
+### Person-Specific Mean $\theta_j (j = 1,…11)$
+
+I now have the data ready to check the assumption that the logarithms of the response times for each non-schizophrenic subject are independent and identically distributed normal random variables with person-specific mean $\theta_j (j = 1,…11)$ and common variance $\sigma^2$.
+My first instinct is to plot the density curves using the 11 samples.
+This plot is shown below.
+
+```{r}
+nschiz %>%
+    mutate(subject = factor(subject, levels = unique(nschiz$subject))) %>%
+    ggplot() +
+    geom_density(aes(x=lms, fill=subject), show.legend = F) +
+    facet_wrap(~subject) +
+    theme_classic()
+```
+
+Subjects p1, p2, p3, p4, and p10 pass the initial eye test for a normal distribution.
+This is not enough however to carry on with the assumption of normality.
+A good statistical test to run that checks for normality is the Shapiro-Wilk test.
+The code and results are displayed below.
+
+```{r}
+#Run S-W test on all 11 subjects samples and store results
+result.shapiro <- NULL
+for(s in unique(nschiz$subject)){
+    rt <- filter(nschiz, subject == s)$lms
+    st <- shapiro.test(rt)
+    result.shapiro <- rbind(result.shapiro,
+                            c(s, st$p.value, st$statistic))
+}
+
+df.sh <-
+    data.frame('subject' = result.shapiro[,1],
+               'PValue' = as.numeric(result.shapiro[,2]),
+               'W' = as.numeric(result.shapiro[,3])) %>%
+    arrange(PValue)
+```
+```{r, echo=F}
+df.sh %>%
+    knitr::kable(., align = c('c','c','c'), col.names = c('Subject', 'P Value', 'W Statistic'))
+```
+
+The first 4 subjects in the table above (p6, p7, p8, p11) have log reaction times that do not seem well fit to a normal distribution (95% confidence level).
+This is assumed based on the p-values < .05 and the lower W statistics.
+The rest of the subjects log reaction times do not reject the null hypothesis (95% confidence level) that the data are normally distributed.
+
+Another way to check this assumption is through plots of the empirical and theoretical quantiles (qqplot).
+The code and chart below shows the results of plotting each subjects sample on a qqplot.
+I sorted the plots (left to right and down) by the p-values from the Shapiro-wilk test.
+Thus the less normal subjects are shown first and the more normal later on down the grid.
+
+```{r}
+#Function for finding qqline slope and intercept
+qqplot.data <- function (vec){
+    y <- quantile(vec[!is.na(vec)], c(0.25, 0.75))
+    x <- qnorm(c(0.25, 0.75))
+    slope <- diff(y)/diff(x)
+    int <- y[1L] - slope * x[1L]
+    return(list('slope'=slope, 'int'=int))
+}
+#Calculating the slope and intercapt for each subjects qqline
+sl.int <- NULL
+for(s in unique(nschiz$subject)){
+    rt <- filter(nschiz, subject == s)$lms
+    if(is.null(sl.int)){
+        sl.int <- data.frame('subject' = s,
+                             'slope'=qqplot.data(rt)$slope,
+                             'int'=qqplot.data(rt)$int)
+    }
+    else{
+        sl.int <- bind_rows(sl.int,
+                            data.frame('subject' = s,
+                                       'slope'=qqplot.data(rt)$slope,
+                                       'int'=qqplot.data(rt)$int))
+    }
+    
+}
+#Plotting the qqplots
+ggplot() +
+    stat_qq(data = nschiz %>% 
+                mutate(subject = factor(subject, levels = df.sh$subject)), 
+            aes(sample=lms, color = subject),
+            show.legend = F) +
+    geom_abline(data = sl.int %>% 
+                    mutate(subject = factor(subject, levels = df.sh$subject)),
+                aes(slope = slope, intercept = int)) +
+    facet_wrap(~subject, scales = 'free') +
+    theme_classic()
+```
+
+The top row contains the 4 subjects where the Shapiro-wilk test resulted in a rejection of the null hypothesis that the data are from a normal distribution.
+The plots support those results as seen by the points in the charts trailing off of the respective qqlines.
+The only other two qqplots that raise some concern are for p10 and p5.
+In both of these there is some separation at the upper end of the qqline.
+
+The assumption of the data having person-specific means $\theta_j (j = 1,…11)$ looks reasonable after investigation.
+While a few of the subjects data do not support this assumption very well the majority do. 
+
+### Common Variance $\sigma^2$
+
+I also need to explore the assumption of the data having a common variance $\sigma^2$.
+I start by looking at the sample variances themselves.
+The question is do they vary drastically or not.
+The more similar they are the more reasonable the assumption is.
+
+```{r, echo=F}
+nschiz %>%
+    group_by(subject) %>%
+    summarise(variance = var(lms)) %>%
+    mutate(subject = factor(subject, levels = unique(nschiz$subject))) %>%
+    ggplot(aes(x=subject, y=variance)) +
+    geom_bar(aes(fill=variance),
+             stat = 'identity',
+             show.legend = F) +
+    geom_text(aes(label=round(variance, 3),
+                  y=variance/2,
+                  fontface = "bold"),
+             show.legend = F) +
+    scale_fill_gradient(low='lightblue', high='red') +
+    theme_classic() +
+    labs(title='Individual Subject Sample Variances',
+         x='Subject',
+         y='Sample Variance')
+```
+
+The plot above shows the sample variance for all 11 subjects as the height of the bars.
+Overall the sample variances seem to be close.
+Most are in or near the .02 to .03 range.
+The exception being the subjects p6 and p11.
+Similar to in the analysis of the means these two subjects do not conform as well as the others to the common variance.
+
+To measure the similarity in the variances I calculated the ratio between every pair of subjects.
+
+```{r}
+#Sample Variance Ratio
+result.var <- NULL
+for(s1 in unique(nschiz$subject)){
+    for(s2 in unique(nschiz$subject)){
+        #Subjects being compared
+        p1 <- filter(nschiz, subject == s1)$lms
+        p2 <- filter(nschiz, subject == s2)$lms
+        #Test
+        res <- var.test(p1, p2, alternative = "two.sided")
+        #Save results
+        result.var <- rbind(result.var,
+                            c(s1, s2, res$statistic))
+    }
+}
+```
+
+The heat map below shows these ratios in a grid with color coding to highlight any ratios that are further away from 1.
+I purposely removed all pairings between the same subject thus the gray diagonal through the map.
+
+```{r, echo=F, fig.width=8}
+#Heat Map
+data.frame('subjectA' = result.var[,1],
+           'subjectB' = result.var[,2],
+           'VarRatio' = as.numeric(result.var[,3])) %>%
+    mutate(subjectA = factor(subjectA, levels = unique(nschiz$subject)),
+           subjectB = factor(subjectB, levels = unique(nschiz$subject)),
+           VarRatio = ifelse(subjectA == subjectB, NA, VarRatio)) %>%
+    ggplot(aes(subjectA, subjectB)) +
+    geom_tile(aes(fill = cut(VarRatio, 
+                             breaks=seq(0.25, 4, .5), 
+                             labels=seq(0.5, 3.5, .5))), 
+              color = "black") +
+    geom_text(aes(label = round(VarRatio, 2))) +
+    scale_fill_manual(drop=FALSE, 
+                      values=colorRampPalette(c("white","red"))(7), 
+                      na.value="gray") +
+    theme_classic() +
+    labs(fill="Ratio of\nVariances",
+         x="Subject A",
+         y="Subject B",
+         title="Sample Variance Ratios") +
+    theme(axis.line = element_blank())
+```
+
+A majority of the ratios fall within the 0.5 to 1.5 bins meaning the variances between the subjects are similar (1 is perfect similarity).
+There are however a large number of ratios that fall far from 1.
+Looking at the ratios between p6 and other subjects there are multiple ratios greater then 3.
+
+The assumption of a common variance $\sigma^2$ does not seem unreasonable.
+Subjects p6 and p11 seem to be outliers to a certain extent.
+The other 9 subjects have reasonably similar variances.
+
+# Problem 2
+For this problem, we will assume that the logarithms of the response times for each non- schizophrenic subject are independent and identically distributed normal random variables with person-specific mean $\theta_j$.
+Unlike Gelman, et al., we will assume the precision $p_j$  may also depend on the subject.
+We will assume that the 11 means and precisions $(\theta_j, p_j)$ are independent and identically distributed normal-gamma random variables with center $\mu$, precision multiplier $k$, shape $\alpha$, and scale $\beta$.
+To do an empirical Bayes analysis, we need estimates of the hyper parameters $\mu$, $k$, $\alpha$, and $\beta$.
+
+### Hyperparameter Estimation
+
+* To estimate the  shape $\alpha$ and scale $\beta$, estimate the  sample precisions $\hat{p_1}, ...,\hat{p_{11}}$ by  calculating the sample variances and taking the inverses. Recall that the unknown precision has a gamma distribution with mean $\alpha\beta$ and variance $\alpha\beta^2$. Therefore, we can estimate $\beta$ as the sample variance of precisions $\hat{p_1}, ...,\hat{p_{11}}$ divided by the sample means of precisions $\hat{p_1}, ...,\hat{p_{11}}$. Then we can estimate $\alpha$ as the sample mean of the $\hat{p_1}, ...,\hat{p_{11}}$ divided by the estimate of $\beta$.
+
+```{r}
+ns.param <- 
+    nschiz %>%
+    group_by(subject) %>%
+    summarise(variance = var(lms)) %>%
+    mutate(precision = 1 / variance) %>%
+    ungroup()
+
+ns.beta <- var(ns.param$precision)/mean(ns.param$precision)
+ns.alpha <- mean(ns.param$precision) / ns.beta
+```
+
+* Estimate the center $\mu$ as the grand mean of all the log reaction times.
+
+```{r}
+ns.mu <- mean(nschiz$lms)
+```
+
+* Estimate the precision multiplier $k$ as follows. First, find the sample mean of the log reaction times for each of the 11 subjects. Then calculate the sample variance of these 11 values. Then take the inverse to get the sample precision. Divide this sample precision by the average of $\hat{p_1}, ...,\hat{p_{11}}$ to get your estimate of $k$.
+
+```{r}
+ns.k <- nschiz %>%
+    group_by(subject) %>%
+    summarise(smean = mean(lms)) %>%
+    ungroup() %>%
+    summarise(svar = var(smean)) %>%
+    mutate(sprec = 1/ svar,
+           sk = sprec / mean(ns.param$precision)) %>%
+    select(sk)
+ns.k <- ns.k[[1]]
+```
+
+### Person-specific Posterior Distributions
+
+Using these empirical Bayes estimates of $\mu$, $k$, $\alpha$, and $\beta$, find the eleven posterior distributions of $(\theta_j, p_j)$.
+Make a table to show your eleven posterior sets of hyper parameters.
+The table will have eleven rows, one for each subject, and a column for each of the four posterior hyper parameters.
+
+```{r}
+#Calculate Posterior Distributions
+findPost <- function(s){
+    subjSamples <- filter(nschiz, subject == s)$lms
+    nSubj <- nrow(filter(nschiz, subject == s))
+    xbarSubj <- mean(subjSamples)
+    #Alpha
+    aStar <- ns.alpha + nSubj / 2
+    #Beta
+    b.p1 <- 0.5 * sum((subjSamples - xbarSubj)^2)
+    b.p2 <- ns.k * nSubj * (xbarSubj - ns.mu)^2 / (2 * (ns.k + nSubj))
+    bStar <- (ns.beta^-1 + b.p1 + b.p2)^-1
+    #Mu
+    muStar <- (ns.k * ns.mu + sum(subjSamples)) / (ns.k + nSubj)
+    #k
+    kStar = ns.k + nSubj
+    
+    res <- list("mu" = muStar, "k" = kStar, "alpha" = aStar, "beta" = bStar)
+    return(res)
+}
+
+nsPost <- NULL
+for(s in unique(nschiz$subject)){
+    if(is.null(nsPost)){
+        nsPost <- data.frame(subject = s, findPost(s))
+    }
+    else{
+        nsPost %<>% bind_rows(., data.frame(subject = s, findPost(s)))
+    }
+}
+```
+
+Table of 11 posterior distributions.
+
+```{r,echo=F}
+knitr::kable(nsPost)
+```
+
+Plot of 11 posterior distributions.
+
+```{r, fig.width=8}
+nsNorm <-
+    nsPost %>%
+    mutate(sigma = sqrt(1/(alpha * beta * k))) %>%
+    select(mu, sigma) %>%
+    as.matrix()
+nsPostDens <- data.frame(theta = seq(5.45,6,length.out = 1000))
+for(r in 1:nrow(nsNorm)){
+    s <- sprintf("p%s", r)
+    nsPostDens[s] <- dnorm(nsPostDens$theta, nsNorm[r,'mu'], nsNorm[r,'sigma'])
+}
+nsPostDens %>%
+    gather(subject, density, -theta) %>%
+    ggplot() +
+    geom_line(aes(x=theta, y=density, color=subject), size=1) +
+    theme_classic() +
+    theme(legend.position = 'bottom') +
+    guides(col = guide_legend(nrow = 1, byrow = TRUE)) +
+    labs(title='Person Specific Posterior Distribution\nReaction Times')
+```
+
+
+# Problem 3
+Find 95% credible intervals for each of the eleven means $\theta_j (j = 1,…11)$ and precisions $p_j (j = 1,…11)$.
+
+The table below shows the values of the 95% credible intervals.
+
+```{r}
+nsPost %>%
+    mutate(ThetaCI = sprintf("[%s, %s]",
+                             round(qnorm(0.025, mu, sqrt(1/(alpha * beta * k))), 2),
+                             round(qnorm(0.975, mu, sqrt(1/(alpha * beta * k))), 2)),
+           PCI = sprintf("[%s, %s]",
+                         round(qgamma(0.025, shape=alpha, scale=beta), 2),
+                         round(qgamma(0.975, shape=alpha, scale=beta), 2))) %>%
+    select(subject, ThetaCI, PCI) %>%
+    knitr::kable(.)
+```
+
+Since there are so many values to compare I decided to graph the intervals as line segments.
+The plot below is the result of this.
+
+```{r,echo=F, fig.height=3}
+nsPost %>%
+    mutate(ThetaLow = qnorm(0.025, mu, sqrt(1/(alpha * beta * k))),
+           ThetaHigh = qnorm(0.975, mu, sqrt(1/(alpha * beta * k))),
+           PLow = qgamma(0.025, shape=alpha, scale=beta),
+           PHigh = qgamma(0.975, shape=alpha, scale=beta)) %>%
+    select(-mu, -k, -alpha, -beta) %>%
+    gather(CI, Value, -subject) %>%
+    mutate(Group = ifelse(CI == 'PLow' | CI == 'PHigh', 'Precision', 'Theta'),
+           End = ifelse(CI == 'PLow' | CI == 'ThetaLow', 'Low', 'High')) %>%
+    select(-CI) %>%
+    spread(End, Value) %>%
+    mutate(Group = factor(Group, levels=c('Theta', 'Precision')),
+           subject = factor(subject, levels=unique(nschiz$subject))) %>%
+    ggplot() +
+    geom_segment(aes(x=Low, xend=High, y=subject, yend=subject, color=subject),
+                 size=4, show.legend = F) +
+    facet_wrap(~Group, scales = 'free_x') +
+    theme_classic() +
+    labs(title='95% Credible Intervals',
+         x='Credible Interval Values',
+         y='Subject') +
+    theme(panel.grid.major.y = element_line(color='gray80'),
+          panel.grid.major.x = element_line())
+```
+
+The log reaction times vary across subjects.
+The biggest difference between two subjects mean log reaction times are from p9 to p2.
+Subject p9 has a CI between 5.5 and 5.6 while p2 has a CI from 5.8 to 5.9.
+There does seem to be a clustering of subjects in three areas with regards to the $\theta$ CI's.
+There are subjects with faster reaction times (lower values) p5, p8, p9.
+There are subjects with "average" reaction times (middle of the pack) p1, p3, p4, p10, and p11.
+The third grouping has the slowest reaction times (higher values) p2, p6, and p7.
+
+The precisions for the 11 subjects all fall very close to each other.
+Subjects p6 and p11 have the precision CI's least like the others.
+This is no surprise since they struggled to support the early assumptions of a normal distribution and common variance in Problem 1.

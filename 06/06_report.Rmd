@@ -3,11 +3,11 @@ title: 'SYST 664: Assignment 6'
 author: "Jake Whalen"
 date: "March 20, 2018"
 output:
-  word_document:
-    toc: yes
   html_document:
     toc: yes
     toc_float: yes
+  word_document:
+    toc: yes
 ---
 
 ```{r setup, include=FALSE}

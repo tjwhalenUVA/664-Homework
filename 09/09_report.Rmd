@@ -1,0 +1,364 @@
+---
+title: "Assignment 9"
+author: "Jake Whalen"
+date: "April 18, 2018"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message=FALSE)
+```
+
+```{r}
+#Packages
+library(tidyverse)
+library(magrittr)
+library(coda)
+```
+
+
+# Problem 1
+
+This assignment uses the reaction time data from Assignment 8, taken from the Gelman et al. 
+reference and found at this url:  http://www.stat.columbia.edu/~gelman/book/data/schiz.asc.
+
+As with Assignment 8, we will consider only the non-schizophrenic subjects (rows 1 to 11).
+
+```{r}
+#Data URL
+www <- "http://www.stat.columbia.edu/~gelman/book/data/schiz.asc"
+#Read and Wrangle
+nschiz <- read.table(www, skip = 5) %>% 
+    mutate(condition = rep(c("non-schizophrenics", "schizophrenics"), c(11, 6))) %>%
+    filter(condition == 'non-schizophrenics') %>% 
+    select(-condition) %>%
+    mutate(subject = sprintf("p%s", 1:11)) %>%
+    gather(reaction, ms, -subject) %>%
+    mutate(lms = log(ms))
+```
+
+* As   with Assignment 8, assume the logarithms of the response times are independent and identically distributed normal random variables with person-specific mean $\theta_s (s = 1,…11)$.
+* Following  Gelman, et al., assume all the observations have the same standard deviation $\sigma^2$.
+* The 11 means $\theta_s (s = 1,…11)$ are  independent and identically distributed normal random variables with mean $\mu$ and standard deviation $\sigma^2$.
+* The unknown  mean  has a normal distribution with mean 5.52 and standard deviation 0.22. This reflects a prior 95% credible interval of [162, 385] ms for the population average reaction time, which is consistent with the literature on reaction times.
+* The inverse variance $\frac{1}{\tau^2}$ has a gamma distribution with shape 0.5 and scale 50. This reflects weak prior information focused on a value of 25 for $\frac{1}{\tau^2}$, or 0.2 for $\tau$.
+* The inverse variance $\frac{1}{\sigma^2}$ has a gamma distribution with shape 0.5 and scale 50. This reflects weak prior information focused on a value of 25 for $\frac{1}{\sigma^2}$, or 0.2 for $\sigma$.
+
+Note that this model is similar to the math test scores example in Unit 7.
+Using the formulas in the Unit 7 notes as a model, find the posterior distribution for each of the unknown parameters given the other parameters.
+
+```{r,echo=F}
+nschiz %<>% mutate(subject = factor(subject, levels = unique(nschiz$subject)))
+```
+
+* Given ($\theta, \tau$), $\mu$ is normally distributed with:
+
+$$Mean: \frac{\frac{n_s\bar{\theta}}{\tau^2} + \frac{\mu}{\sigma^2}}{\frac{n_s}{\tau^2} + \frac{1}{\sigma^2}} = \frac{\frac{11\bar{\theta}}{\tau^2} + \frac{5.52}{0.22^2}}{\frac{11}{\tau^2} + \frac{1}{0.22^2}}$$
+
+$$SD: (\frac{n_s}{\tau^2} + \frac{1}{\sigma^2})^{-1/2} = (\frac{11}{\tau^2} + \frac{1}{0.22^2})^{-1/2}$$
+
+* Given ($\theta, \mu$), $1/\tau^2$ is distributed with a gamma distribution with:
+
+$$shape: \alpha + \frac{1}{2}n_s = \frac{1}{2} + \frac{11}{2} = 6$$
+
+$$scale: (\frac{1}{\beta} + \frac{1}{2}\Sigma(\theta_s-\mu)^2)^{-1} = (\frac{1}{50} + \frac{1}{2}\Sigma(\theta_s-\mu)^2)^{-1}$$
+
+* Given ($y, \theta$), $1/\sigma^2$ is distributed with a gamma distribution with:
+
+$$shape: \alpha + \frac{1}{2}\sum_{1}^{11} n_{so} = \frac{1}{2} + \frac{1}{2} * 330 = 165.5$$
+
+$$scale: (\frac{1}{\beta} + \frac{1}{2}\Sigma(y_{si}-\theta_s)^2)^{-1} = (\frac{1}{50} + \frac{1}{2}\Sigma(y_{si}-\theta_s)^2)^{-1}$$
+
+* Given ($\mu, \tau, \sigma, y$) each $\theta_s$ is normally distributed with:
+
+$$Mean: \frac{\frac{\sum_1^{30}y_{si}}{\sigma^2} + \frac{\mu}{\tau^2}}{\frac{n_s}{\sigma^2} + \frac{1}{\tau^2}}$$
+
+$$SD: (\frac{n_s}{\sigma^2} + \frac{1}{\tau^2})^{-1/2}$$
+
+# Problem 2
+
+Use Gibbs sampling to draw 5000 samples from the posterior distribution of the parameters $\mu$, $\tau$, $\sigma$, and $\theta_s (s = 1,…11)$.
+Find posterior credible intervals for each of these parameters.
+
+```{r}
+init.nschiz <- 
+    nschiz %>%
+    group_by(subject) %>%
+    summarise(yBar = mean(lms),
+              ySSQ = sum(lms^2),
+              nSub = n(),
+              ySD = sd(lms))
+
+nSub <- length(unique(nschiz$subject))
+nSubL <- init.nschiz$nSub
+ySSQ <- init.nschiz$ySSQ
+yBar <- init.nschiz$yBar
+ySD <- init.nschiz$ySD
+```
+
+Set the prior hyperparameters:
+
+```{r}
+mu.mean.0 = 5.52
+mu.SD.0 = 0.22
+tau.sh.0 = sig.sh.0 = 1/2
+tau.sc.0 = sig.sc.0 = 50
+```
+
+Initialize Gibbs sample variables:
+
+```{r}
+numSim = 5000
+thetaG = matrix(nrow = numSim, ncol = nSub)
+thetaG[1,] = yBar    # initial value for theta
+muG = mean(yBar)    # initial value for mu
+tauG = sd(yBar)     # initial value for tau
+sigG = mean(ySD)    # initial value for sigma
+```
+
+Run Gibbs sampler:
+
+```{r}
+for (k in 2:numSim) {
+    mu.mean.1 = (mu.mean.0/mu.SD.0^2+sum(thetaG[k-1,])/tauG[k-1]^2)/(1/mu.SD.0^2+nSub/tauG[k-1]^2)
+    mu.SD.1 = (1/mu.SD.0^2+nSub/tauG[k-1]^2)^-(1/2)
+    #Sample new mu
+    muG[k] = rnorm(1,mu.mean.1, mu.SD.1)
+    
+    tau.sh.1 = tau.sh.0 + 0.5*nSub  # this is the same every iteration
+    tau.sc.1 = (1/tau.sc.0 + 0.5*sum((thetaG[k-1,]-muG[k])^2))^-1
+    #Sample new tau
+    tauG[k] = rgamma(1,shape=tau.sh.1,scale=tau.sc.1)^(-1/2)
+    
+    sig.sh.1 = sig.sh.0 + 0.5*sum(nSubL)  # this is the same every iteration
+    sig.sc.1 = (1/sig.sc.0 + 0.5*sum(ySSQ - nSubL*yBar^2 + nSubL*(yBar - thetaG[k-1,])^2))^-1
+    #Sample new sigma
+    sigG[k] = rgamma(1,shape=sig.sh.1,scale=sig.sc.1)^(-1/2)
+    
+    mu.1 = (muG[k]/tauG[k]^2+yBar*nSubL/sigG[k]^2)/(1/tauG[k]^2+nSubL/sigG[k]^2)
+    tau.1 = (1/tauG[k]^2+nSubL/sigG[k]^2)^(-1/2)  # vector of posterior SDs
+    #Sample new theta
+    thetaG[k,] = rnorm(nSub,mu.1,tau.1)
+}
+```
+
+95% CI on Parameters ($\mu, \tau, \sigma$)
+
+```{r, echo=F}
+ciDF <- function(data, param){
+   data.frame('Parameter' = param,
+           'Lower'=quantile(data,0.025)[[1]],'Upper'=quantile(data,0.975)[[1]])
+}
+```
+
+```{r, echo=F}
+bind_rows(ciDF(muG, 'Mu'), ciDF(tauG, 'Tau'), ciDF(sigG, 'Sigma')) %>% 
+    knitr::kable(., align = c('c','c','c')) 
+```
+
+95% CI for person-specific $\theta_s (s = 1,…11)$
+
+```{r}
+theta.hat = colMeans(thetaG)
+th.lower=th.upper=NULL
+for (i in 1:nSub) {
+    th.lower[i] = quantile(thetaG[,i],0.025)
+    th.upper[i] = quantile(thetaG[,i],0.975)
+}
+```
+
+```{r, echo=F}
+data.frame('Subject' = sprintf("p%s", 1:11),
+           'Lower'=th.lower,'Upper'=th.upper, 'Mean' = theta.hat) %>% 
+    knitr::kable(., align = c('c','c','c','c'))
+```
+
+
+
+
+# Problem 3
+Discuss your results.
+Compare your intervals for $\theta_s (s = 1,…11)$ with the results from Assignment 8.
+The lines in the chart below represent the person-specific credible intervals for $\theta_s$ from assignment 8 (pink) and 9 (blue).
+
+```{r,echo=F}
+ns.param <- 
+    nschiz %>%
+    group_by(subject) %>%
+    summarise(variance = var(lms)) %>%
+    mutate(precision = 1 / variance) %>%
+    ungroup()
+
+ns.beta <- var(ns.param$precision)/mean(ns.param$precision)
+ns.alpha <- mean(ns.param$precision) / ns.beta
+ns.mu <- mean(nschiz$lms)
+
+ns.k <- nschiz %>%
+    group_by(subject) %>%
+    summarise(smean = mean(lms)) %>%
+    ungroup() %>%
+    summarise(svar = var(smean)) %>%
+    mutate(sprec = 1/ svar,
+           sk = sprec / mean(ns.param$precision)) %>%
+    select(sk)
+ns.k <- ns.k[[1]]
+
+findPost <- function(s){
+    subjSamples <- filter(nschiz, subject == s)$lms
+    nSubj <- nrow(filter(nschiz, subject == s))
+    xbarSubj <- mean(subjSamples)
+    #Alpha
+    aStar <- ns.alpha + nSubj / 2
+    #Beta
+    b.p1 <- 0.5 * sum((subjSamples - xbarSubj)^2)
+    b.p2 <- ns.k * nSubj * (xbarSubj - ns.mu)^2 / (2 * (ns.k + nSubj))
+    bStar <- (ns.beta^-1 + b.p1 + b.p2)^-1
+    #Mu
+    muStar <- (ns.k * ns.mu + sum(subjSamples)) / (ns.k + nSubj)
+    #k
+    kStar = ns.k + nSubj
+    
+    res <- list("mu" = muStar, "k" = kStar, "alpha" = aStar, "beta" = bStar)
+    return(res)
+}
+
+nsPost <- NULL
+for(s in unique(nschiz$subject)){
+    if(is.null(nsPost)){
+        nsPost <- data.frame(subject = s, findPost(s))
+    }
+    else{
+        nsPost %<>% bind_rows(., data.frame(subject = s, findPost(s)))
+    }
+}
+
+nsNorm <-
+    nsPost %>%
+    mutate(sigma = sqrt(1/(alpha * beta * k))) %>%
+    select(mu, sigma) %>%
+    as.matrix()
+nsPostDens <- data.frame(theta = seq(5.45,6,length.out = 1000))
+for(r in 1:nrow(nsNorm)){
+    s <- sprintf("p%s", r)
+    nsPostDens[s] <- dnorm(nsPostDens$theta, nsNorm[r,'mu'], nsNorm[r,'sigma'])
+}
+
+df.plot <-
+    nsPost %>%
+    mutate(Low = qnorm(0.025, mu, sqrt(1/(alpha * beta * k))),
+           High = qnorm(0.975, mu, sqrt(1/(alpha * beta * k))),
+           Assignment = 8) %>%
+    select(-mu, -k, -alpha, -beta) %>%
+    bind_rows(.,
+              data.frame('subject' = sprintf("p%s", 1:11),
+                         'Assignment' = rep(9, length(th.lower)),
+                         'Low' = th.lower,
+                         'High' = th.upper)) %>%
+    mutate(Assignment = as.character(Assignment),
+           subject = factor(subject, levels = unique(nschiz$subject)))
+
+
+df.plot %>%
+    ggplot() +
+    geom_segment(aes(y=Assignment, yend=Assignment,
+                     x=Low, xend=High,
+                     color=Assignment),
+                 size=4) +
+    facet_wrap(~subject, scales = 'free_x') +
+    theme_classic() +
+    labs(title='95% Credible Intervals',
+         x='Credible Interval Values',
+         y='Subject') +
+    theme(panel.grid.major.y = element_line(color='gray80'),
+          panel.grid.major.x = element_line(),
+          legend.position = c(.95,0),
+          legend.justification = c(1,0))
+```
+
+Most of the CIs from assignment 8 are narrower then those from assignment 9 but not by much.
+All of the CIs look to be centered around the same value between both problems.
+
+Since all eleven standard deviations for the log reaction times are equal the widths of the CIs for each $\theta_s$ are roughly the same in problem 9. The table below shows the width of the CIs from 8 and 9 for each subject.
+
+```{r, echo=F}
+nsPost %>%
+    mutate(Low = qnorm(0.025, mu, sqrt(1/(alpha * beta * k))),
+           High = qnorm(0.975, mu, sqrt(1/(alpha * beta * k))),
+           Assignment = 8) %>%
+    select(-mu, -k, -alpha, -beta) %>%
+    bind_rows(.,
+              data.frame('subject' = sprintf("p%s", 1:11),
+                         'Assignment' = rep(9, length(th.lower)),
+                         'Low' = th.lower,
+                         'High' = th.upper)) %>%
+    mutate(Diff = High - Low) %>%
+    select(subject, Assignment, Diff) %>%
+    spread(Assignment, Diff) %>%
+    mutate(subject = factor(subject, levels = unique(nschiz$subject))) %>% 
+    arrange(subject) %>%
+    knitr::kable(.)
+```
+
+In assignment 9 all of the differences are close to the hundreths place (0.11).
+In assignment 8 the CI widths vary from subject to subject.
+
+The plot below shows the shrinkage for the 11 subjects $\theta$ values.
+
+```{r,echo=F}
+plot(yBar,theta.hat,main = "Reaction Time Means for 11 Subjects",
+     ylim = c(min(th.lower),max(th.upper)),
+     ylab = "Mean and 95% Interval for Theta")
+lines(yBar,yBar)
+for (i in 1:nSub) {
+    lines(c(yBar[i],yBar[i]),c(th.lower[i],th.upper[i]))
+}
+```
+
+Since the slope of the line is slightly less then 1 we can tell that the lower values for $y_s$ correspond to slightly higher values for $\theta_s$ and higher values for $y_s$ correspond to slightly lower values for $\theta_s$ (Hoff, 140).
+
+Effective sample sizes for parameters $\mu, \tau, \sigma$:
+
+```{r,echo=F}
+data.frame('numSim' = numSim, 
+           'Mu' = round(effectiveSize(muG)[[1]],2),
+           'Tau' = round(effectiveSize(tauG)[[1]],2), 
+           'Sigma' = round(effectiveSize(sigG)[[1]],2)) %>%
+    knitr::kable(.)
+```
+
+The effective sample sizes are close the the number of gibbs samples drawn.
+Thus we effectively have a large sample after using gibbs sampling.
+
+Effective sample sizes for person-specific means $\theta_s$:
+
+```{r,echo=F}
+data.frame('Subject' = sprintf('p%s', 1:11), 
+           'numSim' = numSim,
+           'Effective Sample Size' = round(apply(thetaG,2,effectiveSize),2)) %>% 
+    knitr::kable(.)
+```
+
+We also get large effective sample sizes for the person-specific means.
+
+Next I review the traceplots for the parameters in gibbs sampling.
+
+```{r,echo=F, fig.height=4, fig.width=8}
+data.frame('mu' = muG,'tau' = tauG,'sigma'=sigG, 'sample'=1:length(muG)) %>%
+    gather(Parameter, value, -sample) %>%
+    ggplot() +
+    geom_point(aes(x=sample, y=value, color=Parameter),
+               shape=21, show.legend = F) +
+    facet_wrap(~Parameter, scales = 'free_y') +
+    theme_classic() +
+    theme(axis.ticks.x = element_blank(),
+          axis.text.x = element_blank())
+```
+
+All of the parameters traceplots look stationary thus there is no issue with the samples being taken.

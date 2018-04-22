@@ -1,0 +1,310 @@
+---
+title: "Homework 7"
+author: "Jake Whalen"
+date: "April 2, 2018"
+output:
+  word_document:
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T,
+                      fig.width = 6,
+                      fig.height = 4,
+                      warning = F)
+```
+
+```{r packages}
+suppressMessages(library(tidyverse))
+suppressMessages(library(coda))
+```
+
+# Problem 1
+This problem concerns the HCB data from Assignment 6.
+For this problem, assume the observations are normally distributed with unknown depth-specific means $\Theta_s$ and $\Theta_B$ and common but unknown standard deviation $\Sigma$.
+
+```{r}
+#URL of data given in assignment
+www <- "http://www.biostat.umn.edu/~lynn/iid/wolf.river.dat"
+
+#Read in the data
+pollutants <- read.table(www, header=TRUE, stringsAsFactors = F)
+
+pollutants %<>%
+    mutate(id = rep(seq(1, 10, by = 1), 3)) %>%
+    select(-Aldrin) %>%
+    spread(Depth, HCB) %>%
+    select(-id, -Middepth)
+
+knitr::kable(pollutants)
+```
+
+Assume that experts have provided the following prior information based on previous studies.
+
+* The unknown means $\Theta_s$ and $\Theta_B$ are independent and normally distributed with mean $\mu$ and standard deviation $\tau$. The unknown precision $P = \Sigma^{-2}$ is independent of $\Theta_s$ and $\Theta_B$ and has a gamma distribution with shape $\alpha$ and scale $\beta$.
+* Experts specified a 95% prior credible interval of [3, 9] for $\Theta_s$ and $\Theta_B$. A good fit to this credible interval is obtained by setting the prior mean to $\mu = 6$ and the prior standard deviation to $\tau = 1.5$.
+* A 95% prior credible interval of [0.75, 2.0] is given for the unknown standard deviation $\Sigma$. This translates to a credible interval of [0.25, 1.8] for $P = \Sigma^{-2}$. A good fit to this credible interval is obtained by setting the prior shape to $\alpha = 4.5$ and the prior scale to $\beta = 0.19$.
+
+Find the following conditional distributions:
+
+* The conditional distribution for $\Theta_s$ given $\Theta_b$, P , and the observations.
+    + The values are given for $\mu_s$, $\tau_s$ and the observations ($X_{si}$).
+    + The equation below shows the given values being plugged in to solve for $\mu^*$.
+    $$\mu_s^* = \frac {\frac {\mu_s}{\tau_s^2} + P\Sigma_i X_{si}}{\frac{1}{\tau_s^2} + nP} = \frac {\frac {6}{1.5^2} + P(48.04)}{\frac{1}{1.5^2} + 10P}$$
+    + Then I solve for $\tau^*$ using the given values.
+    $$\tau_s^* = (\frac {1}{\tau_s^2} + nP)^{-1/2} = (\frac {1}{1.5^2} + 10P)^{-1/2}$$
+    + Thus the conditional distribution for $\Theta_s$ given $\Theta_B$, P , and the observations is Normal($\mu_s^*$, $\tau_s^*$).
+    + Since $P$ is unknown the parameters are dependent on the value of $P$. Thus the exact distribution is not known.
+
+* The conditional distribution for $\Theta_b$ given $\Theta_s$, P, and the observations.
+    + This distribution is solved similar to the surface theta above but replaces the observation values.
+    $$\mu_b^* = \frac {\frac {\mu_b}{\tau_b^2} + P\Sigma_i X_{bi}}{\frac{1}{\tau_b^2} + nP} = \frac {\frac {6}{1.5^2} + P(58.39)}{\frac{1}{1.5^2} + 10P}$$
+    + Then I solve for $\tau^*$ using the given values.
+    $$\tau_b^* = (\frac {1}{\tau_b^2} + nP)^{-1/2} = (\frac {1}{1.5^2} + 10P)^{-1/2}$$
+    + Thus the conditional distribution for $\Theta_b$ given $\Theta_s$, P , and the observations is Normal($\mu_b^*$, $\tau_b^*$).
+    + Since $P$ is unknown the parameters are dependent on the value of $P$. Thus the exact distribution is not known.
+
+* The conditional distribution for P given $\Theta_s$, $\Theta_b$, and the observations.
+    + When finding the distribution for P we are given $\alpha$ and $\beta$.
+    + These two values in addition to $\Theta_s, \Theta_b$ and the observations will help calculate the parameters for the Gama distribution of P.
+    + First the $\alpha$ parameter is calculated.
+    $$\alpha^* = \alpha + \frac{n}{2} = 4.5 + \frac {20}{2} = 14.5$$
+    + Since there is no P in the equation for $\alpha$ this value is a constant and will remain the same during Gibbs sampling.
+    + Then the $\beta$ parameter is calculated.
+    $$\beta^* = (\beta^{-1} + \frac{1}{2}\Sigma (X_{si} - \Theta_s)^2 + \frac{1}{2}\Sigma (X_{bi} - \Theta_b)^2)^{-1} = (\frac{1}{0.19} + \frac{1}{2}\Sigma [(X_{si} - \Theta_s)^2 + (X_{bi} - \Theta_b)^2])^{-1}$$
+    + $\beta$ is dependent on P thus the value for it depends on the value of P.
+    + The resulting distribution for P given $\Theta_s$, $\Theta_b$, and the observations is Gamma(14.5, $\beta^*$).
+
+#Problem 2
+Using the distributions you found in Part 1, draw 10,000 Gibbs samples of $(\Theta_s, \Theta_b, P)$.
+
+First I must define some of the variables that will be used to calculate the samples.
+I create two n values to represent the number of observation for both Surface (s) and Bottom (b).
+
+```{r}
+nS <- length(pollutants$Surface)
+nB <- length(pollutants$Bottom)
+```
+
+Then I create variables to store the given values from Problem 1.
+This consists of the prior information the experts have provided.
+
+```{r}
+#Theta
+mu.0 <- 6
+tau.0 <- 1.5
+#P
+alpha.0 <- 4.5
+beta.0 <- 0.19
+```
+
+Since I know $\alpha^*$ is a constant from Problem 1 I define a variable for $\alpha^*$ to be used later.
+
+```{r}
+alpha.star <- alpha.0 + (nB + nS) / 2
+```
+
+Next I need to set some initial values for $\Theta_s, \Theta_b, \Sigma$, and P.
+For both of the $\Theta$ values I use the `mean` of the respective observations.
+For $\Sigma$ I take the standard deviation of all the observations combined.
+P has a known relationship with $\Sigma$ thus I use what I found for $\Sigma$ to initialize P.
+
+```{r}
+thetaS <- c(mean(pollutants$Surface))
+thetaB <- c(mean(pollutants$Bottom))
+sigma <- c(sd(c(pollutants$Surface, pollutants$Bottom)))
+rho <- c(1 / sigma[1]^2)
+```
+
+The next step is to create vectors in `R` that will start with the prior values and receive updated values with each new Gibbs sample.
+
+```{r}
+muS <- c(mu.0)
+muB <- c(mu.0)
+tauS <- c(tau.0)
+tauB <- c(tau.0)
+Beta <- c(beta.0)
+```
+
+I am now at the point where I will implement a loop to perform Gibbs sampling.
+First I define a variable that stores the number of simulations that I will run.
+
+```{r}
+numSim <- 10000
+```
+
+Then I write a loop that calculates the parameters for each $\Theta$ ($\mu$, $\tau$) and passes them into the function `rnorm()`.
+The result is a single random value for $\Theta$.
+I add both the parameters and sample value for $\Theta$ to the next spot in the respective vectors.
+Next I calculate a value for $\beta$ using the $\Theta$ samples I just found.
+This new $\beta$ value and the constant $\alpha^*$ are used in the `rgamma()` function to determine a new sample value for P.
+Then the value for P is used to calculate $\Sigma$ and both are stored in their respective vectors.
+
+```{r}
+for(j in 2:numSim){
+    muS[j] <- ((mu.0/tau.0^2) + (rho[j-1] * sum(pollutants$Surface))) / (tau.0^-2 + nS * rho[j-1])
+    tauS[j] <- (tau.0^-2 + nS * rho[j-1]) ^ (-0.5)
+    thetaS[j] <- rnorm(1, mean = muS[j], sd = tauS[j])
+    
+    muB[j] <- ((mu.0/tau.0^2) + (rho[j-1] * sum(pollutants$Bottom))) / (tau.0^-2 + nB * rho[j-1])
+    tauB[j] <- (tau.0^-2 + nB * rho[j-1]) ^ (-0.5)
+    thetaB[j] <- rnorm(1, mean = muB[j], sd = tauB[j])
+    
+    Beta[j] <- (1/beta.0 + 1/2 * sum((pollutants$Surface - thetaS[j])^2 + (pollutants$Bottom - thetaB[j])^2)) ^ -1
+    rho[j] <- rgamma(1, shape=alpha.star, scale=Beta[j])
+    sigma[j]<-1/sqrt(rho[j])
+}
+```
+
+Once the loop completes the Gibbs sampling step is complete.
+The next part of the question asks to estimate 90% credible intervals for $\Theta_s, \Theta_b, \Sigma=P^{-1/2}$, and $\Theta_b - \Theta_s$.
+
+```{r}
+thetaS.quant <- sprintf("[%s, %s]", round(quantile(thetaS, .05), 3), round(quantile(thetaS, 0.95), 3))
+thetaB.quant <- sprintf("[%s, %s]", round(quantile(thetaB, .05), 3), round(quantile(thetaB, 0.95), 3))
+sigma.quant <- sprintf("[%s, %s]", round(quantile(sigma, .05), 3), round(quantile(sigma, 0.95), 3))
+
+thetaBS <- thetaB - thetaS
+thetaBS.quant <- sprintf("[%s, %s]", round(quantile(thetaBS, .05), 3), round(quantile(thetaBS, 0.95), 3))
+```
+
+The table below shows the results for the calculations of these credible intervals.
+
+```{r, echo=F}
+data.frame('Distribution' = c('Theta S', 'Theta B',
+                              'Sigma', 'Theta(Bottom - Surface)'),
+           'CI' = c(thetaS.quant, thetaB.quant,
+                                       sigma.quant, thetaBS.quant)) %>%
+    knitr::kable(., col.names = c('Distribution', '90% Credible Interval'), 
+                 align = c('c', 'c'))
+```
+
+
+#Problem 3
+Do a traceplot of $\Theta_b - \Theta_s$.
+
+```{r}
+plot(thetaB - thetaS)
+```
+
+Find the autocorrelation function of $\Theta_b - \Theta_s$.
+
+```{r}
+acf(thetaB - thetaS)
+```
+
+Find the effective sample size for your Monte Carlo sample for $\Theta_b - \Theta_s$.
+ 
+```{r}
+effectiveSize(thetaB - thetaS)
+```
+
+#Problem 4
+The distributions found when using Gibbs sampling look like what I would have expected.
+The distributions are centered close to where they were in assignment 6 which used Monte Carlo to estimate the $\Theta$ values.
+The spread of the two distributions are similar which was expected since the P value was used to estimate both the bottom and surface $\Theta$'s with Gibbs.
+
+```{r, echo=F}
+p2_mc <- function(depth){
+    x <- pollutants[,depth]
+    xbar <- mean(x)
+    n <- length(x)
+    # Assume non-informative prior distribution
+    # Normal-Gamma with mu0=0, k0=0, alpha0=-1/2, beta0=infinity
+    # Posterior hyperparameters mu1, k1, alpha1, beta1
+    mu1 <- xbar
+    k1 <- n
+    alpha1 <- -1/2 + n/2
+    beta1 <- 1/(0.5*sum((x-xbar)^2))
+    spread1 <- sqrt(1/(k1*alpha1*beta1))
+    #Theoretical marginal density for theta
+    thetaVals <- seq(xbar - sd(x), xbar + sd(x), by = 0.01)
+    stdVals <- (thetaVals - mu1)/spread1
+    thetaMargDens <- dt(stdVals,df=2*alpha1)/spread1
+    #Set simulation sample size
+    numSim <- 10000
+    # Simulate directly from the posterior distribution 
+    rhoDirect <- rgamma(numSim,shape=alpha1,scale=beta1)
+    sigmaDirect <- 1/sqrt(rhoDirect)
+    thetaDirect <- rnorm(numSim,mean=xbar,sd=sigmaDirect/sqrt(n))
+    #Plot theoretical and Monte Carlo density functions
+    compare.plot <-
+        ggplot() +
+        geom_line(data = data.frame('x' = thetaVals,
+                                    'density' = thetaMargDens),
+                  aes(x=x,
+                      y=density, 
+                      color = 'Theoretical')) +
+        geom_line(data = data.frame('x' = thetaDirect), 
+                     aes(x=x, 
+                         color = 'Monte Carlo'),
+                  stat = 'density') +
+        labs(title = sprintf('Monte Carlo Estimate for %s Depth', depth),
+             y='Density',
+             x='Theta') +
+        theme_classic() +
+        xlim(c(xbar - sd(x), xbar + sd(x)))
+    #Return a list with a plot and the monte carlo simulated values
+    res <- list('plot' = compare.plot,
+                'thetaVals' = thetaDirect,
+                'rhoVals' = rhoDirect,
+                'sigmaVals' = sigmaDirect)
+    return(res)
+}
+```
+
+```{r, echo=F}
+data.frame('Surface' = p2_mc('Surface')$thetaVals,
+           'Bottom' = p2_mc('Bottom')$thetaVals,
+           'Assignment' = '6') %>%
+    bind_rows(data.frame('Surface' = thetaS,
+                         'Bottom' = thetaB,
+                         'Assignment' = '7')) %>%
+    gather(Depth, Sample, -Assignment) %>%
+    ggplot() +
+    geom_density(aes(x=Sample,
+                     fill=Depth),
+                 alpha = 0.4) +
+    labs(title = 'Assignment 6 vs 7 Estimated Distributions',
+         x = 'Theta',
+         y = 'Density') +
+    theme_classic() +
+    xlim(c(4, 7)) +
+    facet_wrap(~Assignment, nrow = 2)
+```
+
+Comparing with the Assignment 6 results above the results from Gibbs sampling in 7 match the Monte Carlo well.
+The only noticeable difference is the spread.
+Since the P value was based on all the observations together, the narrower spread for the Surface grew a little in the Gibbs sample.
+Likewise the spread for the bottom concentrations became slightly narrower because of the influence of the tighter Surface distribution.
+The code below shows the Monte Carlo credible intervals from assignment 6 being calculated.
+
+```{r}
+thetaS.quant6 <- sprintf("[%s, %s]", round(quantile(p2_mc('Surface')$thetaVals, .05), 3), round(quantile(p2_mc('Surface')$thetaVals, 0.95), 3))
+thetaB.quant6 <- sprintf("[%s, %s]", round(quantile(p2_mc('Bottom')$thetaVals, .05), 3), round(quantile(p2_mc('Bottom')$thetaVals, 0.95), 3))
+sigma.quant6.S <- sprintf("[%s, %s]", round(quantile(p2_mc('Surface')$sigmaVals, .05), 3), round(quantile(p2_mc('Surface')$sigmaVals, 0.95), 3))
+sigma.quant6.B <- sprintf("[%s, %s]", round(quantile(p2_mc('Bottom')$sigmaVals, .05), 3), round(quantile(p2_mc('Bottom')$sigmaVals, 0.95), 3))
+sigma.quant6 <- sprintf("S %s, B %s", sigma.quant6.S, sigma.quant6.B)
+
+thetaBS6 <- p2_mc('Bottom')$thetaVals - p2_mc('Surface')$thetaVals
+thetaBS.quant6 <- sprintf("[%s, %s]", round(quantile(thetaBS6, .05), 3), round(quantile(thetaBS6, 0.95), 3))
+```
+
+
+The table below shows the 90% credible interval values for the results from assignment 6 (Monte Carlo) and 7 (Gibbs).
+
+```{r, echo=F}
+data.frame('Distribution' = c('Theta S', 'Theta B',
+                              'Sigma', 'Theta(Bottom - Surface)'),
+           'Gibbs' = c(thetaS.quant, thetaB.quant,
+                       sigma.quant, thetaBS.quant),
+           'Monte Carlo' = c(thetaS.quant6, thetaB.quant6,
+                       sigma.quant6, thetaBS.quant6)) %>%
+    knitr::kable(., align = c('c', 'c'))
+```
+
+There is overall agreement between the two methods in regard to the $\Theta$ values.
+The sigma credible intervals for monte Carlo surface and bottom concentrations fall slightly above and below the Gibbs sigma as expected.
